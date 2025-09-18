@@ -77,6 +77,10 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+
+
+
+
 2) 설정 파일 생성 (macOS)
 - 경로: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - 예시 내용(경로를 사용자의 실제 경로로 변경하세요). `-c` 실행 방식:
