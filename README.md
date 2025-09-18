@@ -1,8 +1,6 @@
 ### Pilldoc User MCP (Local MCP Server)
 
 
-
-
 이 프로젝트는 MCP 호환 클라이언트에서 사용할 수 있는 로컬 MCP 서버를 제공합니다. 로그인 토큰 발급과 주성분 목록 조회 기능을 도구(tool)로 노출합니다.
 
 ### 요구 사항
