@@ -1,0 +1,15 @@
+{
+  "name": "pilldoc-user-mcp",
+  "version": "0.1.0",
+  "entry": "python -m src.mcp_server",
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "dependencies": [
+    {
+      "name": "python",
+      "version": ">=3.9"
+    }
+  ]
+}
+
