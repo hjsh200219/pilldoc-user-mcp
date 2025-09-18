@@ -48,12 +48,12 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 - `main_ingredient(token? | userId/password, baseUrl?, accept?, timeout?, Page, PageSize, ingredientNameKor?, IngredientCode?, drugKind?, SortBy?, a4?, a4Off?, a5?, a5Off?, drugkind?, drugkindOff?, effect?, effectOff?, showMapped?) -> JSON`
   - `token` 미제공 시 내부적으로 `login`을 호출
   - `baseUrl` 미지정 시 `EDB_BASE_URL` 사용
-- `pilldoc_accounts(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
+- `pilldoc_accounts(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
 - `pilldoc_user(token, baseUrl, id, accept?, timeout?) -> JSON`
 - `pilldoc_pharm(token, baseUrl, bizno, accept?, timeout?) -> JSON`
 - `pilldoc_adps_rejects(bizNo, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
 - `pilldoc_adps_reject(bizNo, campaignId, comment, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
-- `pilldoc_user_from_accounts(accountField?, accountValue?, index?, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
+- `pilldoc_user_from_accounts(accountField?, accountValue?, index?, token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
 - `pilldoc_update_account(id, body, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
    - `/v1/pilldoc/account/{id}`로 PATCH 호출하여 약국/계정 정보를 수정
 - `pilldoc_update_account_by_search(body, pharmName?, bizNo?, exact?, index?, accountType?, currentSearchType?, maxPages?, pageSize?, salesChannel?, erpKind?, pharmChain?, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
@@ -69,6 +69,8 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 - 토큰 발급: `login({ userId, password, force: true })`
 - 주성분 조회: `main_ingredient({ Page: 1, PageSize: 20, ingredientNameKor: "아스포타제알파" })`
 - pilldoc 계정: `pilldoc_accounts({ token, baseUrl })`
+- 광고 차단된 약국만: `pilldoc_accounts({ adBlocked: true })`  // 내부적으로 `isAdDisplay: 0`으로 매핑
+- 광고 차단되지 않은 약국만: `pilldoc_accounts({ adBlocked: false })`  // 내부적으로 `isAdDisplay: 1`으로 매핑
 - pilldoc 사용자: `pilldoc_user({ token, baseUrl, id: "USER_ID" })`
 - pilldoc 계정 검색: `pilldoc_accounts({ pageSize: 20, page: 1, erpKind: ["iT3000"], accountType: "일반" })`
 - pilldoc 사용자(계정에서 선택): `pilldoc_user_from_accounts({ searchKeyword: "홍길동", currentSearchType: ["s"], index: 0 })`

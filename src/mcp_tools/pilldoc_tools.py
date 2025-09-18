@@ -72,6 +72,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         sortBy: Optional[str] = None,
         erpKind: Optional[list] = None,
         isAdDisplay: Optional[int] = None,
+        adBlocked: Optional[bool] = None,
         salesChannel: Optional[list] = None,
         pharmChain: Optional[list] = None,
         currentSearchType: Optional[list] = None,
@@ -98,6 +99,9 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             filters["erpKind"] = list(erpKind)
         if isAdDisplay is not None:
             filters["isAdDisplay"] = int(isAdDisplay)
+        elif adBlocked is not None:
+            # Alias: adBlocked=True => isAdDisplay=0 (차단), adBlocked=False => isAdDisplay=1 (미차단)
+            filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
         if salesChannel is not None:
             filters["salesChannel"] = list(salesChannel)
         if pharmChain is not None:
@@ -188,6 +192,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         sortBy: Optional[str] = None,
         erpKind: Optional[list] = None,
         isAdDisplay: Optional[int] = None,
+        adBlocked: Optional[bool] = None,
         salesChannel: Optional[list] = None,
         pharmChain: Optional[list] = None,
         currentSearchType: Optional[list] = None,
@@ -214,6 +219,9 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             filters["erpKind"] = list(erpKind)
         if isAdDisplay is not None:
             filters["isAdDisplay"] = int(isAdDisplay)
+        elif adBlocked is not None:
+            # Alias: adBlocked=True => isAdDisplay=0 (차단), adBlocked=False => isAdDisplay=1 (미차단)
+            filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
         if salesChannel is not None:
             filters["salesChannel"] = list(salesChannel)
         if pharmChain is not None:
