@@ -51,7 +51,18 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 - `pilldoc_accounts(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
 - `pilldoc_user(token, baseUrl, id, accept?, timeout?) -> JSON`
 - `pilldoc_pharm(token, baseUrl, bizno, accept?, timeout?) -> JSON`
+- `pilldoc_adps_rejects(bizNo, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
+- `pilldoc_adps_reject(bizNo, campaignId, comment, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
 - `pilldoc_user_from_accounts(accountField?, accountValue?, index?, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
+- `pilldoc_update_account(id, body, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
+   - `/v1/pilldoc/account/{id}`로 PATCH 호출하여 약국/계정 정보를 수정
+- `pilldoc_update_account_by_search(body, pharmName?, bizNo?, exact?, index?, accountType?, currentSearchType?, maxPages?, pageSize?, salesChannel?, erpKind?, pharmChain?, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
+   - `/v1/pilldoc/accounts`에서 약국명/사업자번호로 id를 찾은 뒤 `/v1/pilldoc/account/{id}` PATCH 수행
+  - `pharmChain` 배열 필터 지원: 지정 시 체인 소속으로 추가 필터링
+  - `salesChannel`/`erpKind` 배열 필터 지원
+  - `maxPages`: 검색 페이지 수 제한(0이면 전체), 대량 데이터에서 유용
+  - `contentType`: PATCH 요청 Content-Type 지정(기본 `application/json`)
+  - `bizNo`는 하이픈 포함 형태(`317-87-01363`)로 입력해도 자동 정규화되어 조회됩니다.
   - `/v1/pilldoc/accounts`에서 계정을 골라 ID를 얻은 뒤 `/v1/pilldoc/user/{id}` 상세를 반환
 
 ### 간단 호출 예 (개념)
@@ -62,6 +73,88 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 - pilldoc 계정 검색: `pilldoc_accounts({ pageSize: 20, page: 1, erpKind: ["iT3000"], accountType: "일반" })`
 - pilldoc 사용자(계정에서 선택): `pilldoc_user_from_accounts({ searchKeyword: "홍길동", currentSearchType: ["s"], index: 0 })`
 - pilldoc 약국: `pilldoc_pharm({ token, baseUrl, bizno: "사업자번호" })`
+- 차단 캠페인: `pilldoc_adps_rejects({ token, baseUrl, bizNo: "사업자번호" })`
+  - 차단 등록: `pilldoc_adps_reject({ token, baseUrl, bizNo: "사업자번호", campaignId: 123, comment: "사유" })`
+
+#### 약국 정보 업데이트 예시
+```json
+// 호출 예 (개념)
+{
+  "id": "d596dbdb-5a96-4970-8fd9-08bae9021e05",
+  "body": {
+    "userType": "pharm",
+    "displayName": "string",
+    "email": "user@example.com",
+    "memberShipType": "basic",
+    "isDisable": true,
+    "lockoutEnabled": true,
+    "unLockAccount": true,
+    "약국명": "string",
+    "accountType": "일반",
+    "관리자승인여부": true,
+    "요양기관번호": "string",
+    "약국전화번호": "string",
+    "휴대전화번호": "string",
+    "pharAddress": "string",
+    "pharAddressDetail": "string",
+    "latitude": 0,
+    "longitude": 0,
+    "bcode": "string",
+    "pharmChain": "string",
+    "erpCode": 0,
+    "영업채널Code": 0,
+    "salesManagerId": 0,
+    "필첵QR표기": "표시",
+    "약국광고표기": "표시"
+  }
+}
+```
+
+#### 검색 후 약국 정보 업데이트 예시 (adpsRejects 포함)
+```json
+// 호출 예 (개념)
+{
+  "pharmName": "OOO약국",
+  "pharmChain": ["온누리약국"],
+  "salesChannel": [5],
+  "erpKind": ["IT3000", "EPHARM"],
+  "maxPages": 0,
+  "contentType": "application/json",
+  "body": {
+    "약국명": "OOO약국",
+    "약국전화번호": "02-000-0000",
+    "휴대전화번호": "010-0000-0000"
+  }
+}
+```
+참고: `pilldoc_find_pharm` 결과의 `matches[*]`에는 `account`, `user`, `pharm`에 더해 `adpsRejects`가 포함됩니다.
+
+### pharmChain 허용 값
+- 온누리약국
+- 옵티마케어
+- 더블유스토어
+- 휴베이스
+- 리드팜
+- 메디팜
+- 데이팜
+- 위드팜
+- 참약사
+
+### salesChannel 코드
+- 1: 약학정보원
+- 2: 비트
+- 3: 한미
+- 0: 터울
+- 4: 팜플
+- 5: 이디비
+
+### erpKind 코드
+- IT3000: [약학정보원] PharmIT3000
+- BIZPHARM: [비트컴퓨터] BizPharm-C
+- DAYPHARM: [데이팜] DayPharm
+- WITHPHARM: [위드팜] WithPharmErp
+- EPHARM: [이디비] EPharm
+- EGHIS: [이지스헬스케어] 이지스팜
 
 ### 디렉토리
 - `src/mcp_server.py`: MCP 서버 엔트리

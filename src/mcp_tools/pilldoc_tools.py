@@ -5,12 +5,12 @@ from mcp.server.fastmcp import FastMCP
 
 try:
     from src.auth import login_and_get_token
-    from src.pilldoc.api import get_accounts, get_user, get_pharm
+    from src.pilldoc.api import get_accounts, get_user, get_pharm, update_account, get_rejected_campaigns, post_rejected_campaign
 except ModuleNotFoundError:
     import sys as _sys, os as _os
     _sys.path.append(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
     from src.auth import login_and_get_token
-    from src.pilldoc.api import get_accounts, get_user, get_pharm
+    from src.pilldoc.api import get_accounts, get_user, get_pharm, update_account, get_rejected_campaigns, post_rejected_campaign
 
 
 def _need_base_url(baseUrl: Optional[str]) -> str:
@@ -46,6 +46,15 @@ def _items_of(obj: Any) -> list:
 
 
 def register_pilldoc_tools(mcp: FastMCP) -> None:
+    def _normalize_bizno(val: Optional[str]) -> Optional[str]:
+        if val is None:
+            return None
+        try:
+            s = str(val)
+        except Exception:
+            return None
+        digits = "".join(ch for ch in s if ch.isdigit())
+        return digits or s
     @mcp.tool()
     def pilldoc_accounts(
         token: Optional[str] = None,
@@ -283,6 +292,9 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         usePharmDetail: bool = True,
         currentSearchType: Optional[list] = None,
         accountType: Optional[str] = None,
+        pharmChain: Optional[list] = None,
+        salesChannel: Optional[list] = None,
+        erpKind: Optional[list] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
         password: Optional[str] = None,
@@ -309,6 +321,12 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
                 filters["currentSearchType"] = list(currentSearchType)
             if accountType is not None:
                 filters["accountType"] = str(accountType)
+            if pharmChain is not None:
+                filters["pharmChain"] = list(pharmChain)
+            if salesChannel is not None:
+                filters["salesChannel"] = list(salesChannel)
+            if erpKind is not None:
+                filters["erpKind"] = list(erpKind)
 
             try:
                 resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
@@ -350,7 +368,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
 
                 # 보조 검사: 계정의 약국명이 다르더라도 약국 상세에서 정확 일치할 수 있음
                 if not matches and usePharmDetail and exact:
-                    biz_no_val = str(it.get("bizNO") or "").strip()
+                    biz_no_val = _normalize_bizno(str(it.get("bizNO") or "").strip())
                     if biz_no_val:
                         try:
                             p = get_pharm(base_url, tok, biz_no_val, accept, timeout)
@@ -384,6 +402,9 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         usePharmDetail: bool = True,
         currentSearchType: Optional[list] = None,
         accountType: Optional[str] = None,
+        pharmChain: Optional[list] = None,
+        salesChannel: Optional[list] = None,
+        erpKind: Optional[list] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
         password: Optional[str] = None,
@@ -420,6 +441,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
 
         page = 1
         last_page: Optional[int] = None
+        bizNo = _normalize_bizno(bizNo)
         while True:
             search_keyword = bizNo or pharmName or ownerName
             filters: Dict[str, Any] = {"page": page, "pageSize": int(pageSize)}
@@ -429,6 +451,12 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
                 filters["currentSearchType"] = list(currentSearchType)
             if accountType is not None:
                 filters["accountType"] = str(accountType)
+            if pharmChain is not None:
+                filters["pharmChain"] = list(pharmChain)
+            if salesChannel is not None:
+                filters["salesChannel"] = list(salesChannel)
+            if erpKind is not None:
+                filters["erpKind"] = list(erpKind)
 
             try:
                 resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
@@ -463,7 +491,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
                     matches.append(it)
                 # 계정명 불일치시 약국 상세에서 정확 매칭 확인
                 elif usePharmDetail and pharmName and exact:
-                    biz_no_val = str(it.get("bizNO") or "").strip()
+                    biz_no_val = _normalize_bizno(str(it.get("bizNO") or "").strip())
                     if biz_no_val:
                         try:
                             p = get_pharm(base_url, tok, biz_no_val, accept, timeout)
@@ -487,6 +515,7 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         for account in matches:
             user_detail: Any = None
             pharm_detail: Any = None
+            adps_rejects: Any = None
 
             user_id_val = None
             for key in ("id", "Id", "userId", "UserId", "accountId", "AccountId"):
@@ -520,8 +549,231 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
                         body = e.response.text if e.response is not None else None
                     pharm_detail = {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
 
-            enriched.append({"account": account, "user": user_detail, "pharm": pharm_detail})
+                # adps reject campaigns
+                try:
+                    adps_rejects = get_rejected_campaigns(base_url, tok, biz_no_val, accept, timeout)
+                except _req.HTTPError as e:
+                    try:
+                        body = e.response.json()
+                    except Exception:
+                        body = e.response.text if e.response is not None else None
+                    adps_rejects = {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
+
+            enriched.append({"account": account, "user": user_detail, "pharm": pharm_detail, "adpsRejects": adps_rejects})
+
+    @mcp.tool()
+    def pilldoc_adps_rejects(
+        bizNo: str,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+    ) -> Dict[str, Any]:
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+        bizNo = _normalize_bizno(bizNo)
+        try:
+            return get_rejected_campaigns(base_url, tok, bizNo, accept, timeout)
+        except _req.HTTPError as e:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text if e.response is not None else None
+            return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
+
+    @mcp.tool()
+    def pilldoc_adps_reject(
+        bizNo: str,
+        campaignId: int,
+        comment: str,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+    ) -> Dict[str, Any]:
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+        bizNo = _normalize_bizno(bizNo)
+        try:
+            return post_rejected_campaign(base_url, tok, bizNo, int(campaignId), str(comment), accept, timeout)
+        except _req.HTTPError as e:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text if e.response is not None else None
+            return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
 
         return {"matches": enriched, "searchedPages": searched_pages, "totalChecked": checked}
 
+
+    @mcp.tool()
+    def pilldoc_update_account_by_search(
+        body: Dict[str, Any],
+        pharmName: Optional[str] = None,
+        bizNo: Optional[str] = None,
+        exact: bool = True,
+        index: int = 0,
+        accountType: Optional[str] = None,
+        currentSearchType: Optional[list] = None,
+        pharmChain: Optional[list] = None,
+        salesChannel: Optional[list] = None,
+        erpKind: Optional[list] = None,
+        maxPages: int = 0,
+        pageSize: int = 100,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+        contentType: str = "application/json",
+    ) -> Dict[str, Any]:
+        """약국명 또는 사업자등록번호로 계정을 찾아 id를 얻은 뒤 PATCH 수행."""
+        import requests as _req
+
+        if not (pharmName or bizNo):
+            raise RuntimeError("pharmName 또는 bizNo 중 하나는 반드시 지정해야 합니다.")
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+
+        # 1) /v1/pilldoc/accounts 페이지네이션 조회
+        page = 1
+        last_page: Optional[int] = None
+        candidates: list = []
+
+        # 기본 검색 타입 보정: bizNo가 주어지면 ['b'], pharmName이면 ['s']
+        default_search = ["b"] if bizNo else (["s"] if pharmName else None)
+
+        bizNo = _normalize_bizno(bizNo)
+        while True:
+            filters: Dict[str, Any] = {"page": page, "pageSize": int(pageSize)}
+            search_keyword = bizNo or pharmName
+            if search_keyword:
+                filters["searchKeyword"] = search_keyword
+            if currentSearchType is not None:
+                filters["currentSearchType"] = list(currentSearchType)
+            elif default_search is not None:
+                filters["currentSearchType"] = default_search
+            if accountType is not None:
+                filters["accountType"] = str(accountType)
+            if pharmChain is not None:
+                filters["pharmChain"] = list(pharmChain)
+            if salesChannel is not None:
+                filters["salesChannel"] = list(salesChannel)
+            if erpKind is not None:
+                filters["erpKind"] = list(erpKind)
+
+            try:
+                resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
+            except _req.HTTPError as e:
+                try:
+                    err_body = e.response.json()
+                except Exception:
+                    err_body = e.response.text if e.response is not None else None
+                return {"step": "accounts", "error": str(e), "status": getattr(e.response, "status_code", None), "body": err_body, "page": page}
+
+            if last_page is None:
+                try:
+                    total_page = int(resp.get("totalPage")) if isinstance(resp, dict) and resp.get("totalPage") is not None else None
+                except Exception:
+                    total_page = None
+                if maxPages and maxPages > 0 and total_page is not None:
+                    last_page = min(int(maxPages), int(total_page))
+                else:
+                    last_page = int(maxPages) if maxPages and maxPages > 0 else total_page or 1
+
+            items = _items_of(resp)
+            if not items:
+                break
+
+            def _matches(it: Dict[str, Any]) -> bool:
+                name_val = str(it.get("약국명") or "").strip()
+                biz_val = _normalize_bizno(str(it.get("bizNO") or it.get("bizNo") or "").strip())
+                conds = []
+                if pharmName is not None:
+                    conds.append(name_val == pharmName if exact else (pharmName in name_val))
+                if bizNo is not None:
+                    conds.append(biz_val == bizNo if exact else (bizNo in biz_val))
+                return all(conds) if conds else True
+
+            for it in items:
+                if isinstance(it, dict) and _matches(it):
+                    candidates.append(it)
+
+            if last_page is not None and page >= last_page:
+                break
+            page += 1
+
+        if not candidates:
+            return {"error": "검색어와 일치하는 항목이 없습니다.", "count": 0}
+
+        if index < 0 or index >= len(candidates):
+            return {"error": "index 범위를 벗어났습니다.", "index": index, "count": len(candidates)}
+
+        selected = candidates[index]
+        if not isinstance(selected, dict):
+            return {"error": "선택된 항목 형식이 올바르지 않습니다.", "selected": selected}
+
+        # 3) id 추출
+        id_keys = ["id", "Id", "userId", "UserId", "accountId", "AccountId"]
+        user_id_value: Optional[str] = None
+        for k in id_keys:
+            if k in selected and selected[k] is not None and str(selected[k]).strip() != "":
+                user_id_value = str(selected[k]).strip()
+                break
+        if not user_id_value:
+            return {"error": "계정 항목에서 id를 찾지 못했습니다.", "available_keys": list(selected.keys())}
+
+        # 4) PATCH /v1/pilldoc/account/{id}
+        try:
+            result = update_account(base_url, tok, user_id_value, body, accept, timeout, content_type=contentType)
+            return {"id": user_id_value, "result": result}
+        except _req.HTTPError as e:
+            try:
+                err_body = e.response.json()
+            except Exception:
+                err_body = e.response.text if e.response is not None else None
+            return {"step": "update", "userId": user_id_value, "error": str(e), "status": getattr(e.response, "status_code", None), "body": err_body}
+
+    @mcp.tool()
+    def pilldoc_update_account(
+        id: str,
+        body: Dict[str, Any],
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+        contentType: str = "application/json",
+    ) -> Dict[str, Any]:
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+        try:
+            return update_account(base_url, tok, id, body, accept, timeout, content_type=contentType)
+        except _req.HTTPError as e:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text if e.response is not None else None
+            return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
 
