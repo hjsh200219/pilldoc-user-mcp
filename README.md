@@ -19,9 +19,15 @@ pip install -r requirements.txt
 cp .env.example .env.local
 vi .env.local
 ```
+
+#### 서버 URL 설정
+- **개발 서버**: https://dev-adminapi.edbintra.co.kr
+- **실서버 (프로덕션)**: https://webconsole-api.edbintra.co.kr
+
+#### 환경 변수
 - 필수
-  - `EDB_BASE_URL` (예: https://dev-adminapi.edbintra.co.kr)
-  - `EDB_LOGIN_URL` (예: https://dev-adminapi.edbintra.co.kr/v1/auth/login)
+  - `EDB_BASE_URL` (개발: https://dev-adminapi.edbintra.co.kr, 실서버: https://webconsole-api.edbintra.co.kr)
+  - `EDB_LOGIN_URL` (개발: https://dev-adminapi.edbintra.co.kr/v1/auth/login, 실서버: https://webconsole-api.edbintra.co.kr/v1/auth/login)
 - 선택
   - `EDB_USER_ID`, `EDB_PASSWORD` (로그인 시 기본값)
   - `EDB_FORCE_LOGIN` (true/false)
@@ -179,6 +185,8 @@ pip install -r requirements.txt
 2) 설정 파일 생성 (macOS)
 - 경로: `~/Library/Application Support/Claude/claude_desktop_config.json`
 - 예시 내용(경로를 사용자의 실제 경로로 변경하세요). `-c` 실행 방식:
+
+#### 개발 서버 설정 예시
 ```json
 {
   "mcpServers": {
@@ -193,6 +201,29 @@ pip install -r requirements.txt
         "PYTHONPATH": "/ABSOLUTE/PROJECT/PATH",
         "EDB_BASE_URL": "https://dev-adminapi.edbintra.co.kr",
         "EDB_LOGIN_URL": "https://dev-adminapi.edbintra.co.kr/v1/auth/login",
+        "EDB_USER_ID": "EMAIL",
+        "EDB_PASSWORD": "PASSWORD"
+      }
+    }
+  }
+}
+```
+
+#### 실서버 (프로덕션) 설정 예시
+```json
+{
+  "mcpServers": {
+    "pilldoc-user-mcp": {
+      "command": "/ABSOLUTE/PROJECT/PATH/.venv/bin/python",
+      "args": [
+        "-c",
+        "import sys; sys.path.insert(0, '/ABSOLUTE/PROJECT/PATH'); from src.mcp_server import create_server; create_server().run()"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONPATH": "/ABSOLUTE/PROJECT/PATH",
+        "EDB_BASE_URL": "https://webconsole-api.edbintra.co.kr",
+        "EDB_LOGIN_URL": "https://webconsole-api.edbintra.co.kr/v1/auth/login",
         "EDB_USER_ID": "EMAIL",
         "EDB_PASSWORD": "PASSWORD"
       }
