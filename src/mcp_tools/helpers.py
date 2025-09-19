@@ -41,6 +41,153 @@ def items_of(obj: Any) -> list:
     return []
 
 
+def normalize_filter_params(params: Dict[str, Any]) -> Dict[str, Any]:
+    """필터 파라미터 정규화 - 일반적인 실수 패턴을 API 스펙에 맞게 변환
+
+    계정 조회 필터링 파라미터 매핑:
+    - 페이지네이션, 정렬, 필터링 파라미터 정규화
+    - 잘못된 이름을 올바른 파라미터로 매핑
+    """
+    # 파라미터 이름 매핑
+    param_mappings = {
+        # 페이지네이션 관련
+        "page_size": "pageSize",
+        "pagesize": "pageSize",
+        "size": "pageSize",
+        "limit": "pageSize",
+        "per_page": "pageSize",
+        "page_no": "page",
+        "pageNo": "page",
+        "page_num": "page",
+        "pageNum": "page",
+        "offset": "page",  # offset을 page로 변환 (주의 필요)
+
+        # 정렬 관련
+        "sort": "sortBy",
+        "order": "sortBy",
+        "orderBy": "sortBy",
+        "sort_by": "sortBy",
+
+        # ERP 관련
+        "erp": "erpKind",
+        "erpType": "erpKind",
+        "erp_kind": "erpKind",
+        "erp_type": "erpKind",
+
+        # 광고 관련
+        "ad_display": "isAdDisplay",
+        "adDisplay": "isAdDisplay",
+        "광고표시": "isAdDisplay",
+        "광고": "isAdDisplay",
+        "ad_blocked": "adBlocked",
+        "광고차단": "adBlocked",
+
+        # 판매채널
+        "sales_channel": "salesChannel",
+        "channel": "salesChannel",
+        "영업채널": "salesChannel",
+
+        # 약국체인
+        "pharm_chain": "pharmChain",
+        "chain": "pharmChain",
+        "체인": "pharmChain",
+        "pharmacy_chain": "pharmChain",
+
+        # 검색 관련
+        "search": "searchKeyword",
+        "keyword": "searchKeyword",
+        "query": "searchKeyword",
+        "q": "searchKeyword",
+        "search_keyword": "searchKeyword",
+        "검색": "searchKeyword",
+        "검색어": "searchKeyword",
+
+        # 검색 타입
+        "search_type": "currentSearchType",
+        "searchType": "currentSearchType",
+        "검색타입": "currentSearchType",
+        "검색유형": "currentSearchType",
+
+        # 계정 타입
+        "account_type": "accountType",
+        "type": "accountType",
+        "계정타입": "accountType",
+        "계정유형": "accountType",
+    }
+
+    # 파라미터 이름 변환
+    normalized = {}
+    for key, value in params.items():
+        # 매핑 테이블에서 찾기
+        mapped_key = param_mappings.get(key, key)
+        normalized[mapped_key] = value
+
+    # 값 정규화
+
+    # pageSize: 숫자로 변환, 기본값 처리
+    if "pageSize" in normalized:
+        try:
+            normalized["pageSize"] = int(normalized["pageSize"])
+            # 범위 제한 (1-1000)
+            normalized["pageSize"] = max(1, min(1000, normalized["pageSize"]))
+        except (ValueError, TypeError):
+            normalized["pageSize"] = 100  # 기본값
+
+    # page: 숫자로 변환, 1부터 시작
+    if "page" in normalized:
+        try:
+            normalized["page"] = int(normalized["page"])
+            normalized["page"] = max(1, normalized["page"])
+        except (ValueError, TypeError):
+            normalized["page"] = 1
+
+    # isAdDisplay: 0 또는 1로 변환
+    if "isAdDisplay" in normalized:
+        val = normalized["isAdDisplay"]
+        if isinstance(val, bool):
+            normalized["isAdDisplay"] = 0 if val else 1
+        elif str(val).lower() in ["true", "yes", "표시", "show"]:
+            normalized["isAdDisplay"] = 0  # 0이 표시
+        elif str(val).lower() in ["false", "no", "미표시", "차단", "hide"]:
+            normalized["isAdDisplay"] = 1  # 1이 미표시/차단
+        else:
+            try:
+                normalized["isAdDisplay"] = int(val)
+            except:
+                pass
+
+    # adBlocked: boolean으로 변환
+    if "adBlocked" in normalized:
+        val = normalized["adBlocked"]
+        if isinstance(val, str):
+            normalized["adBlocked"] = val.lower() in ["true", "1", "yes", "차단"]
+        elif isinstance(val, int):
+            normalized["adBlocked"] = bool(val)
+
+    # currentSearchType: 배열로 변환
+    if "currentSearchType" in normalized:
+        val = normalized["currentSearchType"]
+        if isinstance(val, str):
+            # "s", "b", "sb" 같은 문자열을 배열로 변환
+            if val in ["s", "b", "sb", "bs"]:
+                normalized["currentSearchType"] = list(val) if len(val) > 1 else [val]
+            else:
+                normalized["currentSearchType"] = [val]
+        elif not isinstance(val, list):
+            normalized["currentSearchType"] = [str(val)]
+
+    # erpKind, salesChannel, pharmChain: 배열로 변환
+    for field in ["erpKind", "salesChannel", "pharmChain"]:
+        if field in normalized:
+            val = normalized[field]
+            if not isinstance(val, list):
+                normalized[field] = [val] if val is not None else []
+
+    # sortBy: 서버 스펙을 존중하여 값은 그대로 전달 (예: "CreatedAt")
+
+    return normalized
+
+
 def normalize_bizno(val: Optional[str]) -> Optional[str]:
     """사업자 번호 정규화 (하이픈 제거)"""
     if val is None:

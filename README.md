@@ -1,7 +1,6 @@
 ### Pilldoc User MCP (Local MCP Server)
 
-
-이 프로젝트는 MCP 호환 클라이언트에서 사용할 수 있는 로컬 MCP 서버를 제공합니다. 로그인 토큰 발급과 주성분 목록 조회 기능을 도구(tool)로 노출합니다.
+이 프로젝트는 MCP 호환 클라이언트에서 사용할 수 있는 로컬 MCP 서버를 제공합니다. 약국 계정 관리, 사용자 정보 조회, 캠페인 관리 등 다양한 도구(tool)를 제공합니다.
 
 ### 요구 사항
 - Python 3.9+
@@ -52,6 +51,7 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 - `login(userId?, password?, force?, loginUrl?, timeout?) -> token`
   - 미지정 시 환경변수 사용: `EDB_USER_ID`, `EDB_PASSWORD`, `EDB_LOGIN_URL`
 - `pilldoc_accounts(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
+  - **주의**: `isAdDisplay`는 조회 필터링용입니다. 업데이트 시에는 `약국광고표기` 필드를 사용하세요.
 - `pilldoc_user(token, baseUrl, id, accept?, timeout?) -> JSON`
 - `pilldoc_pharm(token, baseUrl, bizno, accept?, timeout?) -> JSON`
 - `pilldoc_adps_rejects(bizNo, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
@@ -62,8 +62,15 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
   - 반환: `totalCountReported`, `pagesFetched`, `period.from/to`, `stats.monthly/region/erpCode/adBlocked`
 - `pilldoc_update_account(id, body, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
    - `/v1/pilldoc/account/{id}`로 PATCH 호출하여 약국/계정 정보를 수정
+   - **자동 필드 변환**: 일반적인 실수를 자동으로 수정합니다
+     - `ownerName`, `약국장` → `displayName` (약국장 이름)
+     - `isAdDisplay` → `약국광고표기` (0→"표시", 1→"미표시")
+     - `phone`, `전화번호` → `약국전화번호`
+     - `mobile`, `휴대폰` → `휴대전화번호`
+   - **값 검증**: 이메일, 전화번호 형식, 불린 값 등을 자동 검증 및 정규화
 - `pilldoc_update_account_by_search(body, pharmName?, bizNo?, exact?, index?, accountType?, currentSearchType?, maxPages?, pageSize?, salesChannel?, erpKind?, pharmChain?, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
    - `/v1/pilldoc/accounts`에서 약국명/사업자번호로 id를 찾은 뒤 `/v1/pilldoc/account/{id}` PATCH 수행
+   - **자동 변환**: `isAdDisplay` 필드 지원 (자동으로 `약국광고표기`로 변환)
   - `pharmChain` 배열 필터 지원: 지정 시 체인 소속으로 추가 필터링
   - `salesChannel`/`erpKind` 배열 필터 지원
   - `maxPages`: 검색 페이지 수 제한(0이면 전체), 대량 데이터에서 유용
@@ -85,13 +92,45 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
   - 차단 등록: `pilldoc_adps_reject({ token, baseUrl, bizNo: "사업자번호", campaignId: 123, comment: "사유" })`
 
 #### 약국 정보 업데이트 예시
+
+**중요 구분**:
+- **조회 시**: `isAdDisplay` 필드 사용 (0=표시, 1=미표시)
+- **업데이트 시**: `약국광고표기` 필드 사용 ("표시" 또는 "미표시")
+- **약국장 이름**: `displayName` 필드 사용 (❌ 약국명과 다름!)
+- **약국 이름**: `약국명` 필드 사용
+- API는 PATCH 메서드만 사용합니다.
+
 ```json
-// 호출 예 (개념)
+// 광고 표시로 설정
+{
+  "id": "629dc20e-8d05-4ae9-ab65-f0a48175e951",
+  "body": {
+    "약국광고표기": "표시"
+  }
+}
+
+// 광고 미표시로 설정
+{
+  "id": "629dc20e-8d05-4ae9-ab65-f0a48175e951",
+  "body": {
+    "약국광고표기": "미표시"
+  }
+}
+
+// 약국장 이름 변경
+{
+  "id": "629dc20e-8d05-4ae9-ab65-f0a48175e951",
+  "body": {
+    "displayName": "신승호"  // 약국장 이름
+  }
+}
+
+// 전체 필드 예시
 {
   "id": "d596dbdb-5a96-4970-8fd9-08bae9021e05",
   "body": {
     "userType": "pharm",
-    "displayName": "string",
+    "displayName": "약국장 이름",  // 약국장/대표자 이름
     "email": "user@example.com",
     "memberShipType": "basic",
     "isDisable": true,
@@ -113,7 +152,7 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
     "영업채널Code": 0,
     "salesManagerId": 0,
     "필첵QR표기": "표시",
-    "약국광고표기": "표시"
+    "약국광고표기": "표시"  // "표시" 또는 "미표시"
   }
 }
 ```

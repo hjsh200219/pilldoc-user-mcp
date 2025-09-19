@@ -6,7 +6,7 @@ import requests as _req
 from src.pilldoc.api import get_accounts, get_user, get_pharm, get_rejected_campaigns
 from .helpers import (
     need_base_url, ensure_token, items_of, normalize_bizno,
-    handle_http_error
+    handle_http_error, normalize_filter_params
 )
 
 
@@ -38,14 +38,29 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
         name: str,
         exact: bool = True,
         maxPages: int = 0,
+        max_pages: Optional[int] = None,
         pageSize: int = 100,
+        page_size: Optional[int] = None,
+        size: Optional[int] = None,
+        limit: Optional[int] = None,
         stopOnFirst: bool = True,
+        stop_on_first: Optional[bool] = None,
         usePharmDetail: bool = True,
+        use_pharm_detail: Optional[bool] = None,
         currentSearchType: Optional[list] = None,
+        search_type: Optional[list] = None,
+        searchType: Optional[list] = None,
         accountType: Optional[str] = None,
+        account_type: Optional[str] = None,
         pharmChain: Optional[list] = None,
+        pharm_chain: Optional[list] = None,
+        chain: Optional[list] = None,
         salesChannel: Optional[list] = None,
+        sales_channel: Optional[list] = None,
+        channel: Optional[list] = None,
         erpKind: Optional[list] = None,
+        erp_kind: Optional[list] = None,
+        erp: Optional[list] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
         password: Optional[str] = None,
@@ -54,10 +69,40 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
         baseUrl: Optional[str] = None,
         accept: str = "application/json",
         timeout: int = 15,
+        **kwargs
     ) -> Dict[str, Any]:
         """약국명으로 약국 검색"""
         base_url = need_base_url(baseUrl)
         tok = ensure_token(token, userId, password, loginUrl, timeout)
+
+        # 파라미터 통합
+        maxPages = max_pages if max_pages is not None else maxPages
+        stopOnFirst = stop_on_first if stop_on_first is not None else stopOnFirst
+        usePharmDetail = use_pharm_detail if use_pharm_detail is not None else usePharmDetail
+
+        # 필터 파라미터 수집 및 정규화
+        filter_params = {}
+        if pageSize is not None: filter_params["pageSize"] = pageSize
+        if page_size is not None: filter_params["page_size"] = page_size
+        if size is not None: filter_params["size"] = size
+        if limit is not None: filter_params["limit"] = limit
+        if currentSearchType is not None: filter_params["currentSearchType"] = currentSearchType
+        if search_type is not None: filter_params["search_type"] = search_type
+        if searchType is not None: filter_params["searchType"] = searchType
+        if accountType is not None: filter_params["accountType"] = accountType
+        if account_type is not None: filter_params["account_type"] = account_type
+        if pharmChain is not None: filter_params["pharmChain"] = pharmChain
+        if pharm_chain is not None: filter_params["pharm_chain"] = pharm_chain
+        if chain is not None: filter_params["pharmChain"] = chain
+        if salesChannel is not None: filter_params["salesChannel"] = salesChannel
+        if sales_channel is not None: filter_params["sales_channel"] = sales_channel
+        if channel is not None: filter_params["salesChannel"] = channel
+        if erpKind is not None: filter_params["erpKind"] = erpKind
+        if erp_kind is not None: filter_params["erp_kind"] = erp_kind
+        if erp is not None: filter_params["erp"] = erp
+        filter_params.update(kwargs)
+
+        normalized = normalize_filter_params(filter_params)
 
         matches = []
         checked = 0
@@ -66,17 +111,21 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
         page = 1
         last_page: Optional[int] = None
         while True:
-            filters: Dict[str, Any] = {"page": page, "pageSize": int(pageSize), "searchKeyword": name}
-            if currentSearchType is not None:
-                filters["currentSearchType"] = list(currentSearchType)
-            if accountType is not None:
-                filters["accountType"] = str(accountType)
-            if pharmChain is not None:
-                filters["pharmChain"] = list(pharmChain)
-            if salesChannel is not None:
-                filters["salesChannel"] = list(salesChannel)
-            if erpKind is not None:
-                filters["erpKind"] = list(erpKind)
+            filters: Dict[str, Any] = {
+                "page": page,
+                "pageSize": normalized.get("pageSize", 100),
+                "searchKeyword": name
+            }
+            if normalized.get("currentSearchType"):
+                filters["currentSearchType"] = normalized["currentSearchType"]
+            if normalized.get("accountType"):
+                filters["accountType"] = normalized["accountType"]
+            if normalized.get("pharmChain"):
+                filters["pharmChain"] = normalized["pharmChain"]
+            if normalized.get("salesChannel"):
+                filters["salesChannel"] = normalized["salesChannel"]
+            if normalized.get("erpKind"):
+                filters["erpKind"] = normalized["erpKind"]
 
             try:
                 resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
@@ -141,18 +190,39 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
     @mcp.tool()
     def pilldoc_find_pharm(
         pharmName: Optional[str] = None,
+        pharm_name: Optional[str] = None,
+        pharmacy: Optional[str] = None,
         ownerName: Optional[str] = None,
+        owner_name: Optional[str] = None,
+        displayName: Optional[str] = None,
         bizNo: Optional[str] = None,
+        biz_no: Optional[str] = None,
+        bizno: Optional[str] = None,
         exact: bool = True,
         maxPages: int = 0,
+        max_pages: Optional[int] = None,
         pageSize: int = 100,
+        page_size: Optional[int] = None,
+        size: Optional[int] = None,
+        limit: Optional[int] = None,
         stopOnFirst: bool = True,
+        stop_on_first: Optional[bool] = None,
         usePharmDetail: bool = True,
+        use_pharm_detail: Optional[bool] = None,
         currentSearchType: Optional[list] = None,
+        search_type: Optional[list] = None,
+        searchType: Optional[list] = None,
         accountType: Optional[str] = None,
+        account_type: Optional[str] = None,
         pharmChain: Optional[list] = None,
+        pharm_chain: Optional[list] = None,
+        chain: Optional[list] = None,
         salesChannel: Optional[list] = None,
+        sales_channel: Optional[list] = None,
+        channel: Optional[list] = None,
         erpKind: Optional[list] = None,
+        erp_kind: Optional[list] = None,
+        erp: Optional[list] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
         password: Optional[str] = None,
@@ -161,13 +231,55 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
         baseUrl: Optional[str] = None,
         accept: str = "application/json",
         timeout: int = 15,
+        **kwargs
     ) -> Dict[str, Any]:
-        """약국 검색 (다양한 필터 지원)"""
+        """약국 검색 (다양한 필터 지원)
+
+        다양한 파라미터 이름을 지원합니다:
+        - 약국명: pharmName, pharm_name, pharmacy
+        - 약국장: ownerName, owner_name, displayName
+        - 사업자번호: bizNo, biz_no, bizno
+        - 체인: pharmChain, pharm_chain, chain
+        - 채널: salesChannel, sales_channel, channel
+        - ERP: erpKind, erp_kind, erp
+        """
+        # 파라미터 통합
+        pharmName = pharmName or pharm_name or pharmacy
+        ownerName = ownerName or owner_name or displayName
+        bizNo = bizNo or biz_no or bizno
+        maxPages = max_pages if max_pages is not None else maxPages
+        stopOnFirst = stop_on_first if stop_on_first is not None else stopOnFirst
+        usePharmDetail = use_pharm_detail if use_pharm_detail is not None else usePharmDetail
+
         if not (pharmName or ownerName or bizNo):
             raise RuntimeError("pharmName, ownerName, bizNo 중 하나는 지정해야 합니다.")
 
         base_url = need_base_url(baseUrl)
         tok = ensure_token(token, userId, password, loginUrl, timeout)
+
+        # 필터 파라미터 수집 및 정규화
+        filter_params = {}
+        if pageSize is not None: filter_params["pageSize"] = pageSize
+        if page_size is not None: filter_params["page_size"] = page_size
+        if size is not None: filter_params["size"] = size
+        if limit is not None: filter_params["limit"] = limit
+        if currentSearchType is not None: filter_params["currentSearchType"] = currentSearchType
+        if search_type is not None: filter_params["search_type"] = search_type
+        if searchType is not None: filter_params["searchType"] = searchType
+        if accountType is not None: filter_params["accountType"] = accountType
+        if account_type is not None: filter_params["account_type"] = account_type
+        if pharmChain is not None: filter_params["pharmChain"] = pharmChain
+        if pharm_chain is not None: filter_params["pharm_chain"] = pharm_chain
+        if chain is not None: filter_params["pharmChain"] = chain
+        if salesChannel is not None: filter_params["salesChannel"] = salesChannel
+        if sales_channel is not None: filter_params["sales_channel"] = sales_channel
+        if channel is not None: filter_params["salesChannel"] = channel
+        if erpKind is not None: filter_params["erpKind"] = erpKind
+        if erp_kind is not None: filter_params["erp_kind"] = erp_kind
+        if erp is not None: filter_params["erp"] = erp
+        filter_params.update(kwargs)
+
+        normalized = normalize_filter_params(filter_params)
 
         def _matches(it: Dict[str, Any]) -> bool:
             name_val = str(it.get("약국명") or "").strip()
@@ -191,19 +303,22 @@ def register_pharmacy_tools(mcp: FastMCP) -> None:
         bizNo = normalize_bizno(bizNo)
         while True:
             search_keyword = bizNo or pharmName or ownerName
-            filters: Dict[str, Any] = {"page": page, "pageSize": int(pageSize)}
+            filters: Dict[str, Any] = {
+                "page": page,
+                "pageSize": normalized.get("pageSize", 100)
+            }
             if search_keyword:
                 filters["searchKeyword"] = search_keyword
-            if currentSearchType is not None:
-                filters["currentSearchType"] = list(currentSearchType)
-            if accountType is not None:
-                filters["accountType"] = str(accountType)
-            if pharmChain is not None:
-                filters["pharmChain"] = list(pharmChain)
-            if salesChannel is not None:
-                filters["salesChannel"] = list(salesChannel)
-            if erpKind is not None:
-                filters["erpKind"] = list(erpKind)
+            if normalized.get("currentSearchType"):
+                filters["currentSearchType"] = normalized["currentSearchType"]
+            if normalized.get("accountType"):
+                filters["accountType"] = normalized["accountType"]
+            if normalized.get("pharmChain"):
+                filters["pharmChain"] = normalized["pharmChain"]
+            if normalized.get("salesChannel"):
+                filters["salesChannel"] = normalized["salesChannel"]
+            if normalized.get("erpKind"):
+                filters["erpKind"] = normalized["erpKind"]
 
             try:
                 resp = get_accounts(base_url, tok, accept, timeout, filters=filters)

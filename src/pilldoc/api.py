@@ -140,8 +140,8 @@ def update_account(
             "multipart/form-data",
         ]
 
-    # 메서드 자동 재시도 후보 (일부 서버는 PATCH 대신 PUT만 허용)
-    methods = ["PATCH", "PUT"]
+    # PATCH 메서드만 사용
+    methods = ["PATCH"]
 
     last_err: Optional[Exception] = None
     for method in methods:
