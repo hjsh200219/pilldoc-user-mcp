@@ -55,5 +55,3 @@ def register_auth_tools(mcp: FastMCP) -> None:
         _AUTO_TOKEN = token
         os.environ["EDB_TOKEN"] = token
         return token
-
-
