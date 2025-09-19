@@ -55,6 +55,21 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             return None
         digits = "".join(ch for ch in s if ch.isdigit())
         return digits or s
+
+    def _is_ad_display_from_item(item: Dict[str, Any]) -> Optional[int]:
+        """광고 표시 상태를 숫자로 반환합니다. 0=표시(차단 아님), 1=차단, None=알 수 없음"""
+        label_raw = item.get("광고차단")
+        label = str(label_raw).strip()
+        if label == "":
+            return None
+        low = label.lower()
+        blocked_vals = {"차단", "미표시", "y", "yes", "true", "blocked", "block"}
+        display_vals = {"표시", "표시중", "n", "no", "false", "display"}
+        if low in blocked_vals:
+            return 1
+        if low in display_vals:
+            return 0
+        return None
     @mcp.tool()
     def pilldoc_accounts(
         token: Optional[str] = None,
@@ -72,7 +87,6 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         sortBy: Optional[str] = None,
         erpKind: Optional[list] = None,
         isAdDisplay: Optional[int] = None,
-        adBlocked: Optional[bool] = None,
         salesChannel: Optional[list] = None,
         pharmChain: Optional[list] = None,
         currentSearchType: Optional[list] = None,
@@ -99,9 +113,6 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             filters["erpKind"] = list(erpKind)
         if isAdDisplay is not None:
             filters["isAdDisplay"] = int(isAdDisplay)
-        elif adBlocked is not None:
-            # Alias: adBlocked=True => isAdDisplay=0 (차단), adBlocked=False => isAdDisplay=1 (미차단)
-            filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
         if salesChannel is not None:
             filters["salesChannel"] = list(salesChannel)
         if pharmChain is not None:
@@ -121,6 +132,200 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             except Exception:
                 body = e.response.text if e.response is not None else None
             return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
+
+    @mcp.tool()
+    def pilldoc_accounts_compact(
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+        pageSize: Optional[int] = None,
+        page: Optional[int] = None,
+        sortBy: Optional[str] = None,
+        erpKind: Optional[list] = None,
+        isAdDisplay: Optional[int] = None,
+        salesChannel: Optional[list] = None,
+        pharmChain: Optional[list] = None,
+        currentSearchType: Optional[list] = None,
+        searchKeyword: Optional[str] = None,
+        accountType: Optional[str] = None,
+        fields: Optional[list] = None,
+        includeAdBlockedBool: bool = False,
+        includeItems: bool = False,
+        limitItems: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """계정 목록을 간결한 형태로 반환합니다. 선택한 필드만 노출하고 adBlocked 불리언을 포함할 수 있습니다.
+
+        기본 필드: ["id", "bizno"] (bizno는 원본의 bizNO/bizNo/사업자등록번호에서 정규화)
+        """
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+
+        filters: Dict[str, Any] = {}
+        if pageSize is not None:
+            filters["pageSize"] = int(pageSize)
+        if page is not None:
+            filters["page"] = int(page)
+        if sortBy is not None:
+            filters["sortBy"] = str(sortBy)
+        if erpKind is not None:
+            filters["erpKind"] = list(erpKind)
+        if isAdDisplay is not None:
+            filters["isAdDisplay"] = int(isAdDisplay)
+        if salesChannel is not None:
+            filters["salesChannel"] = list(salesChannel)
+        if pharmChain is not None:
+            filters["pharmChain"] = list(pharmChain)
+        if currentSearchType is not None:
+            filters["currentSearchType"] = list(currentSearchType)
+        if searchKeyword is not None:
+            filters["searchKeyword"] = str(searchKeyword)
+        if accountType is not None:
+            filters["accountType"] = str(accountType)
+
+        default_fields = [
+            "id",
+            "bizno",
+        ]
+        wanted = list(fields) if isinstance(fields, list) and fields else default_fields
+
+        def _select_item(it: Dict[str, Any]) -> Dict[str, Any]:
+            slim: Dict[str, Any] = {}
+            for k in wanted:
+                if k == "bizno":
+                    raw = it.get("bizNO") or it.get("bizNo") or it.get("사업자등록번호") or it.get("bizno")
+                    try:
+                        raw = str(raw).strip() if raw is not None else None
+                    except Exception:
+                        raw = None
+                    slim["bizno"] = _normalize_bizno(raw)
+                else:
+                    slim[k] = it.get(k)
+            if includeAdBlockedBool:
+                isd = _is_ad_display_from_item(it)
+                slim["isAdDisplay"] = isd
+            return slim
+
+        try:
+            resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
+        except _req.HTTPError as e:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text if e.response is not None else None
+            return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
+
+        items = _items_of(resp)
+        slim_items = [_select_item(it) for it in items if isinstance(it, dict)]
+        if limitItems is not None:
+            try:
+                slim_items = slim_items[: int(limitItems)]
+            except Exception:
+                pass
+
+        meta: Dict[str, Any] = {}
+        if isinstance(resp, dict):
+            for key in ("totalCount", "totalPage", "nowPage"):
+                if key in resp:
+                    meta[key] = resp[key]
+
+        if includeItems:
+            meta["items"] = slim_items
+        return meta
+
+    
+
+    @mcp.tool()
+    def pilldoc_summary(
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+        # filters
+        erpKind: Optional[list] = None,
+        isAdDisplay: Optional[int] = None,
+        salesChannel: Optional[list] = None,
+        pharmChain: Optional[list] = None,
+        currentSearchType: Optional[list] = None,
+        searchKeyword: Optional[str] = None,
+        accountType: Optional[str] = None,
+        # summary options
+        metric: str = "count",  # supports: count
+        splitBy: Optional[str] = None,  # e.g., "isAdDisplay"
+        year: Optional[int] = None,  # 연도 필터(YYYY)
+        month: Optional[int] = None, # 월 필터(1-12)
+        groupBy: Optional[str] = None,  # e.g., "region", "month"
+    ) -> Dict[str, Any]:
+        """일반화된 최소 응답 요약 도구. 기본은 count만 반환. splitBy 지정 시 분할 카운트.
+        - isAdDisplay 규약: 0=표시(차단 아님), 1=차단
+        - 최소 토큰 사용을 위해 pageSize=1로 메타 정보만 조회
+        """
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+
+        def _count_with(_filters: Dict[str, Any]) -> Optional[int]:
+            try:
+                r = get_accounts(base_url, tok, accept, timeout, filters=_filters)
+                return int(r.get("totalCount")) if isinstance(r, dict) and r.get("totalCount") is not None else None
+            except Exception:
+                return None
+
+        # 공통 필터(메타만): pageSize=1
+        base_filters: Dict[str, Any] = {"page": 1, "pageSize": 1}
+        if erpKind is not None:
+            base_filters["erpKind"] = list(erpKind)
+        if isAdDisplay is not None:
+            base_filters["isAdDisplay"] = int(isAdDisplay)
+        if salesChannel is not None:
+            base_filters["salesChannel"] = list(salesChannel)
+        if pharmChain is not None:
+            base_filters["pharmChain"] = list(pharmChain)
+        if currentSearchType is not None:
+            base_filters["currentSearchType"] = list(currentSearchType)
+        if searchKeyword is not None:
+            base_filters["searchKeyword"] = str(searchKeyword)
+        if accountType is not None:
+            base_filters["accountType"] = str(accountType)
+
+        if metric != "count":
+            return {"error": "unsupported_metric", "metric": metric}
+
+        # 분할 카운트: splitBy가 isAdDisplay이고, 호출자가 isAdDisplay를 지정하지 않은 경우 0/1 두 번만 호출
+        if splitBy == "isAdDisplay" and isAdDisplay is None and groupBy is None:
+            f0 = dict(base_filters)
+            f0["isAdDisplay"] = 0
+            f1 = dict(base_filters)
+            f1["isAdDisplay"] = 1
+            return {"countDisplayed": _count_with(f0), "countBlocked": _count_with(f1)}
+
+        # 연/월 집계: groupBy=month, year 지정 시 해당 연도의 월별 카운트(1..12)
+        if groupBy == "month" and year is not None:
+            out = []
+            for m in range(1, 13):
+                f = dict(base_filters)
+                f["year"] = int(year)
+                f["month"] = int(m)
+                out.append({"month": f"{year}-{m:02d}", "count": _count_with(f)})
+            return {"monthly": out}
+
+        # 지역 집계: groupBy=region (최소 토큰 위해 accounts API가 region 필터/집계를 직접 제공하지 않으면 count만 반환)
+        if groupBy == "region":
+            return {"error": "unsupported_groupBy", "groupBy": groupBy}
+
+        # 기본 단일 카운트
+        return {"count": _count_with(base_filters)}
 
     @mcp.tool()
     def pilldoc_user(
@@ -220,8 +425,8 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
         if isAdDisplay is not None:
             filters["isAdDisplay"] = int(isAdDisplay)
         elif adBlocked is not None:
-            # Alias: adBlocked=True => isAdDisplay=0 (차단), adBlocked=False => isAdDisplay=1 (미차단)
-            filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
+            # Alias 정정: isAdDisplay=1 이 광고 차단, 0 이 광고 표시
+            filters["isAdDisplay"] = 1 if bool(adBlocked) else 0
         if salesChannel is not None:
             filters["salesChannel"] = list(salesChannel)
         if pharmChain is not None:
@@ -832,12 +1037,24 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             return s[:7] if len(s) >= 7 else None
 
         def _ad_blocked_of(item: Dict[str, Any]) -> Optional[bool]:
-            label = str(item.get("광고차단") or "").strip()
+            # 서버 정의: isAdDisplay 0=표시(차단 아님), 1=차단
+            isd = item.get("isAdDisplay")
+            try:
+                if isd is not None:
+                    return bool(int(isd) == 1)
+            except Exception:
+                pass
+            # 폴백: 라벨 해석
+            label_raw = item.get("광고차단")
+            label = str(label_raw).strip()
             if label == "":
                 return None
-            if label in ("표시", "차단", "Y", "YES", "Yes"):
+            low = label.lower()
+            blocked_true_vals = {"차단", "y", "yes", "true", "blocked", "block"}
+            blocked_false_vals = {"표시", "표시중", "n", "no", "false", "display", "미표시"}
+            if low in blocked_true_vals:
                 return True
-            if label in ("미표시", "N", "NO", "No"):
+            if low in blocked_false_vals:
                 return False
             return None
 
@@ -863,7 +1080,13 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
             if isAdDisplay is not None:
                 filters["isAdDisplay"] = int(isAdDisplay)
             elif adBlocked is not None:
-                filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
+                # Alias 정정: isAdDisplay=1 이 광고 차단, 0 이 광고 표시
+                filters["isAdDisplay"] = 1 if bool(adBlocked) else 0
+            if isAdDisplay is not None:
+                filters["isAdDisplay"] = int(isAdDisplay)
+            elif adBlocked is not None:
+                # Alias 정정: isAdDisplay=1 이 광고 차단, 0 이 광고 표시
+                filters["isAdDisplay"] = 1 if bool(adBlocked) else 0
             if salesChannel is not None:
                 filters["salesChannel"] = list(salesChannel)
             if pharmChain is not None:
