@@ -785,3 +785,201 @@ def register_pilldoc_tools(mcp: FastMCP) -> None:
                 body = e.response.text if e.response is not None else None
             return {"error": str(e), "status": getattr(e.response, "status_code", None), "body": body}
 
+
+    @mcp.tool()
+    def pilldoc_accounts_stats(
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+        pageSize: int = 200,
+        maxPages: int = 0,
+        sortBy: Optional[str] = None,
+        erpKind: Optional[list] = None,
+        isAdDisplay: Optional[int] = None,
+        adBlocked: Optional[bool] = None,
+        salesChannel: Optional[list] = None,
+        pharmChain: Optional[list] = None,
+        currentSearchType: Optional[list] = None,
+        searchKeyword: Optional[str] = None,
+        accountType: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """pilldoc 계정 목록을 페이지네이션으로 수집해 통계(월별/지역별/ERP/광고차단)를 집계합니다."""
+        import requests as _req
+
+        base_url = _need_base_url(baseUrl)
+        tok = _ensure_token(token, userId, password, loginUrl, timeout)
+
+        def _region_of(item: Dict[str, Any]) -> Optional[str]:
+            for key in ("검색용주소", "주소"):
+                val = str(item.get(key) or "").strip()
+                if val and val != "None":
+                    try:
+                        return val.split()[0]
+                    except Exception:
+                        return None
+            return None
+
+        def _month_of(created_at: Optional[str]) -> Optional[str]:
+            if not created_at:
+                return None
+            s = str(created_at)
+            # ISO-like: YYYY-MM-... → first 7 chars
+            return s[:7] if len(s) >= 7 else None
+
+        def _ad_blocked_of(item: Dict[str, Any]) -> Optional[bool]:
+            label = str(item.get("광고차단") or "").strip()
+            if label == "":
+                return None
+            if label in ("표시", "차단", "Y", "YES", "Yes"):
+                return True
+            if label in ("미표시", "N", "NO", "No"):
+                return False
+            return None
+
+        total_reported: Optional[int] = None
+        pages_fetched = 0
+        first_created: Optional[str] = None
+        last_created: Optional[str] = None
+
+        monthly: Dict[str, int] = {}
+        region: Dict[str, int] = {}
+        erp: Dict[str, int] = {}
+        adstats = {"blocked": 0, "notBlocked": 0, "unknown": 0}
+
+        page = 1
+        last_page: Optional[int] = None
+
+        while True:
+            filters: Dict[str, Any] = {"page": page, "pageSize": int(pageSize)}
+            if sortBy is not None:
+                filters["sortBy"] = str(sortBy)
+            if erpKind is not None:
+                filters["erpKind"] = list(erpKind)
+            if isAdDisplay is not None:
+                filters["isAdDisplay"] = int(isAdDisplay)
+            elif adBlocked is not None:
+                filters["isAdDisplay"] = 0 if bool(adBlocked) else 1
+            if salesChannel is not None:
+                filters["salesChannel"] = list(salesChannel)
+            if pharmChain is not None:
+                filters["pharmChain"] = list(pharmChain)
+            if currentSearchType is not None:
+                filters["currentSearchType"] = list(currentSearchType)
+            if searchKeyword is not None:
+                filters["searchKeyword"] = str(searchKeyword)
+            if accountType is not None:
+                filters["accountType"] = str(accountType)
+
+            try:
+                resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
+            except _req.HTTPError as e:
+                try:
+                    body = e.response.json()
+                except Exception:
+                    body = e.response.text if e.response is not None else None
+                return {"step": "accounts", "error": str(e), "status": getattr(e.response, "status_code", None), "body": body, "page": page}
+
+            if total_reported is None and isinstance(resp, dict):
+                try:
+                    total_reported = int(resp.get("totalCount")) if resp.get("totalCount") is not None else None
+                except Exception:
+                    total_reported = None
+
+            if last_page is None and isinstance(resp, dict):
+                try:
+                    total_page = int(resp.get("totalPage")) if resp.get("totalPage") is not None else None
+                except Exception:
+                    total_page = None
+                if maxPages and maxPages > 0 and total_page is not None:
+                    last_page = min(int(maxPages), int(total_page))
+                else:
+                    last_page = int(maxPages) if maxPages and maxPages > 0 else total_page or 1
+
+            items = _items_of(resp)
+            if not items:
+                break
+            pages_fetched += 1
+
+            for it in items:
+                if not isinstance(it, dict):
+                    continue
+
+                # createdAt range
+                created_at = str(it.get("createdAt") or "").strip()
+                if created_at:
+                    if first_created is None or created_at < first_created:
+                        first_created = created_at
+                    if last_created is None or created_at > last_created:
+                        last_created = created_at
+
+                # monthly
+                mkey = _month_of(created_at)
+                if mkey:
+                    monthly[mkey] = monthly.get(mkey, 0) + 1
+
+                # region
+                rkey = _region_of(it)
+                if rkey:
+                    region[rkey] = region.get(rkey, 0) + 1
+
+                # erp
+                ecode = it.get("erpCode")
+                ekey = "null" if ecode is None else str(ecode)
+                erp[ekey] = erp.get(ekey, 0) + 1
+
+                # ad block
+                ab = _ad_blocked_of(it)
+                if ab is True:
+                    adstats["blocked"] += 1
+                elif ab is False:
+                    adstats["notBlocked"] += 1
+                else:
+                    adstats["unknown"] += 1
+
+            if last_page is not None and page >= last_page:
+                break
+            page += 1
+
+        def _sorted_dict_counts(d: Dict[str, int], by_numeric_key: bool = False) -> Any:
+            try:
+                if by_numeric_key:
+                    items_sorted = sorted(((k, v) for k, v in d.items()), key=lambda kv: (int(kv[0]) if kv[0].lstrip("-+").isdigit() else 10**9, kv[0]))
+                else:
+                    items_sorted = sorted(d.items(), key=lambda kv: kv[0])
+            except Exception:
+                items_sorted = sorted(d.items(), key=lambda kv: kv[0])
+            return [{"key": k, "count": v} for k, v in items_sorted]
+
+        monthly_sorted = [{"month": k, "count": v} for k, v in sorted(monthly.items(), key=lambda kv: kv[0])]
+        region_sorted = _sorted_dict_counts(region)
+        erp_sorted = _sorted_dict_counts(erp, by_numeric_key=True)
+
+        return {
+            "filters": {
+                "pageSize": pageSize,
+                "maxPages": maxPages,
+                "sortBy": sortBy,
+                "erpKind": erpKind,
+                "isAdDisplay": isAdDisplay if isAdDisplay is not None else (0 if adBlocked else (1 if adBlocked is False else None)),
+                "salesChannel": salesChannel,
+                "pharmChain": pharmChain,
+                "currentSearchType": currentSearchType,
+                "searchKeyword": searchKeyword,
+                "accountType": accountType,
+            },
+            "totalCountReported": total_reported,
+            "pagesFetched": pages_fetched,
+            "period": {"from": first_created, "to": last_created},
+            "stats": {
+                "monthly": monthly_sorted,
+                "region": region_sorted,
+                "erpCode": erp_sorted,
+                "adBlocked": adstats,
+            },
+        }
+

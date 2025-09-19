@@ -45,15 +45,15 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 ### 제공 도구 (Tools)
 - `login(userId?, password?, force?, loginUrl?, timeout?) -> token`
   - 미지정 시 환경변수 사용: `EDB_USER_ID`, `EDB_PASSWORD`, `EDB_LOGIN_URL`
-- `main_ingredient(token? | userId/password, baseUrl?, accept?, timeout?, Page, PageSize, ingredientNameKor?, IngredientCode?, drugKind?, SortBy?, a4?, a4Off?, a5?, a5Off?, drugkind?, drugkindOff?, effect?, effectOff?, showMapped?) -> JSON`
-  - `token` 미제공 시 내부적으로 `login`을 호출
-  - `baseUrl` 미지정 시 `EDB_BASE_URL` 사용
 - `pilldoc_accounts(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
 - `pilldoc_user(token, baseUrl, id, accept?, timeout?) -> JSON`
 - `pilldoc_pharm(token, baseUrl, bizno, accept?, timeout?) -> JSON`
 - `pilldoc_adps_rejects(bizNo, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
 - `pilldoc_adps_reject(bizNo, campaignId, comment, token? | userId/password, baseUrl?, accept?, timeout?) -> JSON`
 - `pilldoc_user_from_accounts(accountField?, accountValue?, index?, token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, page?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
+- `pilldoc_accounts_stats(token? | userId/password, baseUrl?, accept?, timeout?, pageSize?, maxPages?, sortBy?, erpKind?, isAdDisplay?, adBlocked?, salesChannel?, pharmChain?, currentSearchType?, searchKeyword?, accountType?) -> JSON`
+  - 계정 목록을 페이지네이션으로 수집하여 통계를 집계합니다.
+  - 반환: `totalCountReported`, `pagesFetched`, `period.from/to`, `stats.monthly/region/erpCode/adBlocked`
 - `pilldoc_update_account(id, body, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
    - `/v1/pilldoc/account/{id}`로 PATCH 호출하여 약국/계정 정보를 수정
 - `pilldoc_update_account_by_search(body, pharmName?, bizNo?, exact?, index?, accountType?, currentSearchType?, maxPages?, pageSize?, salesChannel?, erpKind?, pharmChain?, token? | userId/password, baseUrl?, accept?, timeout?, contentType?) -> JSON`
@@ -67,10 +67,10 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 
 ### 간단 호출 예 (개념)
 - 토큰 발급: `login({ userId, password, force: true })`
-- 주성분 조회: `main_ingredient({ Page: 1, PageSize: 20, ingredientNameKor: "아스포타제알파" })`
 - pilldoc 계정: `pilldoc_accounts({ token, baseUrl })`
 - 광고 차단된 약국만: `pilldoc_accounts({ adBlocked: true })`  // 내부적으로 `isAdDisplay: 0`으로 매핑
 - 광고 차단되지 않은 약국만: `pilldoc_accounts({ adBlocked: false })`  // 내부적으로 `isAdDisplay: 1`으로 매핑
+- 월별/지역별 등 통계: `pilldoc_accounts_stats({ pageSize: 200, maxPages: 0 })`
 - pilldoc 사용자: `pilldoc_user({ token, baseUrl, id: "USER_ID" })`
 - pilldoc 계정 검색: `pilldoc_accounts({ pageSize: 20, page: 1, erpKind: ["iT3000"], accountType: "일반" })`
 - pilldoc 사용자(계정에서 선택): `pilldoc_user_from_accounts({ searchKeyword: "홍길동", currentSearchType: ["s"], index: 0 })`
@@ -161,7 +161,6 @@ MCP 호환 클라이언트(예: IDE/Agent)에서 이 디렉토리를 로컬 서�
 ### 디렉토리
 - `src/mcp_server.py`: MCP 서버 엔트리
 - `src/auth.py`: 로그인/토큰 유틸
-- `src/druginfo/main_ingredient.py`: 조회 로직 (도구에서 재사용)
 
 ### Claude Desktop 설정
 macOS(로컬)에서 Claude Desktop과 연동하려면 아래 설정 파일을 생성하세요.
