@@ -305,3 +305,72 @@ def handle_http_error(e, step: Optional[str] = None) -> Dict[str, Any]:
     if step:
         result["step"] = step
     return result
+
+
+def limit_response_size(data: Dict[str, Any], max_items: int = 50, summary_only: bool = False) -> Dict[str, Any]:
+    """
+    응답 크기를 제한하여 대화 길이 초과 방지
+    
+    Args:
+        data: 원본 응답 데이터
+        max_items: 최대 아이템 수
+        summary_only: True시 통계 정보만 반환
+        
+    Returns:
+        크기가 제한된 응답 데이터
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    # 에러가 있으면 그대로 반환
+    if "error" in data:
+        return data
+    
+    # summary_only가 True이면 items 제거하고 통계만 반환
+    if summary_only:
+        result = data.copy()
+        if "items" in result:
+            item_count = len(result["items"])
+            del result["items"]
+            result["_summary_mode"] = True
+            result["_total_items"] = item_count
+        return result
+    
+    # items가 있고 max_items를 초과하면 제한
+    if "items" in data and isinstance(data["items"], list):
+        if len(data["items"]) > max_items:
+            result = data.copy()
+            original_count = len(result["items"])
+            result["items"] = result["items"][:max_items]
+            result["_truncated"] = True
+            result["_original_item_count"] = original_count
+            result["_warning"] = f"결과가 {max_items}개로 제한되었습니다. 원본 {original_count}개"
+            return result
+    
+    return data
+
+
+def extract_essential_fields(items: list, field_map: Dict[str, str]) -> list:
+    """
+    아이템 목록에서 핵심 필드만 추출하여 응답 크기 줄이기
+    
+    Args:
+        items: 원본 아이템 리스트
+        field_map: 추출할 필드 매핑 {"원본필드": "표시필드"}
+        
+    Returns:
+        핵심 필드만 포함된 아이템 리스트
+    """
+    if not isinstance(items, list):
+        return items
+    
+    essential_items = []
+    for item in items:
+        if isinstance(item, dict):
+            essential_item = {}
+            for original_field, display_field in field_map.items():
+                if original_field in item:
+                    essential_item[display_field] = item[original_field]
+            essential_items.append(essential_item)
+    
+    return essential_items

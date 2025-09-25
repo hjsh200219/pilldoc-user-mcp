@@ -276,6 +276,8 @@ def register_product_orders_tools(mcp: FastMCP):
         page_size: int = 20,
         page: int = 1,
         sort_by: Optional[str] = None,
+        summary_only: bool = False,
+        max_items: int = 50,
         baseUrl: Optional[str] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
@@ -297,6 +299,8 @@ def register_product_orders_tools(mcp: FastMCP):
             page_size: 페이지 크기 (기본값: 20)
             page: 현재 페이지 (기본값: 1)
             sort_by: 정렬 (예: -CreatedAt, CreatedAt)
+            summary_only: True시 통계 요약만 반환 (대화 길이 절약)
+            max_items: 반환할 최대 아이템 수 (기본값: 50, 대화 길이 제한 방지)
             baseUrl: API 베이스 URL
             token: 인증 토큰
             userId: 사용자 ID (토큰이 없을 때)
@@ -305,13 +309,16 @@ def register_product_orders_tools(mcp: FastMCP):
             timeout: 타임아웃
             
         Returns:
-            주문 목록 및 페이징 정보
+            주문 목록 및 페이징 정보 (summary_only=True시 통계만)
         """
         try:
             base_url = need_base_url(baseUrl)
             auth_token = ensure_token(token, userId, password, loginUrl, timeout)
             
-            return get_product_orders(
+            # 대량 데이터 방지를 위해 page_size 제한
+            safe_page_size = min(page_size, 100)
+            
+            result = get_product_orders(
                 base_url=base_url,
                 token=auth_token,
                 status=status,
@@ -321,19 +328,32 @@ def register_product_orders_tools(mcp: FastMCP):
                 search_type=search_type,
                 order_date_from=order_date_from,
                 order_date_to=order_date_to,
-                page_size=page_size,
+                page_size=safe_page_size,
                 page=page,
                 sort_by=sort_by
             )
+            
+            # summary_only가 True이면 통계만 반환
+            if summary_only:
+                return analyze_order_statistics(result)
+            
+            # max_items 제한 적용
+            if result.get("items") and len(result["items"]) > max_items:
+                original_count = len(result["items"])
+                result["items"] = result["items"][:max_items]
+                result["_truncated"] = True
+                result["_original_item_count"] = original_count
+                result["_warning"] = f"결과가 {max_items}개로 제한되었습니다. 원본 {original_count}개"
+            
+            return result
         except Exception as e:
             return {"error": f"주문 목록 조회 실패: {str(e)}"}
     
     @mcp.tool("analyze_order_statistics")
     def analyze_stats_tool(
+        order_date_from: str,
+        order_date_to: str,
         status: Optional[int] = None,
-        days: Optional[int] = None,
-        order_date_from: Optional[str] = None,
-        order_date_to: Optional[str] = None,
         baseUrl: Optional[str] = None,
         token: Optional[str] = None,
         userId: Optional[str] = None,
@@ -342,13 +362,12 @@ def register_product_orders_tools(mcp: FastMCP):
         timeout: int = 15
     ) -> Dict[str, Any]:
         """
-        주문 통계 분석
+        주문 통계 분석 (날짜 범위 필수)
         
         Args:
+            order_date_from: 주문일시From (YYYY-MM-DD 형식, 필수)
+            order_date_to: 주문일시To (YYYY-MM-DD 형식, 필수)
             status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
-            days: 최근 N일간 데이터 (order_date_from/to보다 우선)
-            order_date_from: 주문일시From (YYYY-MM-DD 형식)
-            order_date_to: 주문일시To (YYYY-MM-DD 형식)
             baseUrl: API 베이스 URL
             token: 인증 토큰
             userId: 사용자 ID (토큰이 없을 때)
@@ -363,24 +382,14 @@ def register_product_orders_tools(mcp: FastMCP):
             base_url = need_base_url(baseUrl)
             auth_token = ensure_token(token, userId, password, loginUrl, timeout)
             
-            # 날짜 범위 설정
-            if days:
-                orders_data = get_recent_orders(
-                    base_url=base_url,
-                    token=auth_token,
-                    days=days,
-                    status=status,
-                    page_size=100  # 통계를 위해 더 많은 데이터 조회
-                )
-            else:
-                orders_data = get_product_orders(
-                    base_url=base_url,
-                    token=auth_token,
-                    status=status,
-                    order_date_from=order_date_from,
-                    order_date_to=order_date_to,
-                    page_size=100
-                )
+            orders_data = get_product_orders(
+                base_url=base_url,
+                token=auth_token,
+                status=status,
+                order_date_from=order_date_from,
+                order_date_to=order_date_to,
+                page_size=100  # 통계를 위해 더 많은 데이터 조회
+            )
             
             return analyze_order_statistics(orders_data)
         except Exception as e:
@@ -503,3 +512,191 @@ def register_product_orders_tools(mcp: FastMCP):
                 "정렬": "-CreatedAt (내림차순), CreatedAt (오름차순)"
             }
         }
+    
+    @mcp.tool("get_order_summary")
+    def get_order_summary_tool(
+        order_date_from: str,
+        order_date_to: str,
+        status: Optional[int] = None,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
+    ) -> Dict[str, Any]:
+        """
+        주문 요약 정보만 조회 (대화 길이 절약용)
+        
+        Args:
+            order_date_from: 주문일시From (YYYY-MM-DD 형식, 필수)
+            order_date_to: 주문일시To (YYYY-MM-DD 형식, 필수)
+            status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
+            
+        Returns:
+            주문 통계 요약 정보만 (아이템 목록 제외)
+        """
+        try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
+            # 통계용으로 더 많은 데이터 조회하지만 아이템은 제외
+            orders_data = get_product_orders(
+                base_url=base_url,
+                token=auth_token,
+                status=status,
+                order_date_from=order_date_from,
+                order_date_to=order_date_to,
+                page_size=100,  # 통계 정확성을 위해
+                sort_by="-주문일시"
+            )
+            
+            # 통계만 추출
+            stats = analyze_order_statistics(orders_data)
+            
+            # 기간 정보 추가
+            stats["조회_기간"] = {
+                "시작일": order_date_from,
+                "종료일": order_date_to
+            }
+            
+            return stats
+        except Exception as e:
+            return {"error": f"주문 요약 조회 실패: {str(e)}"}
+    
+    @mcp.tool("get_recent_order_items")
+    def get_recent_items_tool(
+        order_date_from: str,
+        order_date_to: str,
+        limit: int = 5,
+        status: Optional[int] = None,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
+    ) -> Dict[str, Any]:
+        """
+        주문 아이템만 간단히 조회 (대화 길이 절약용)
+        
+        Args:
+            order_date_from: 주문일시From (YYYY-MM-DD 형식, 필수)
+            order_date_to: 주문일시To (YYYY-MM-DD 형식, 필수)
+            limit: 조회할 최대 아이템 수 (기본값: 5개)
+            status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
+            
+        Returns:
+            주문 아이템들의 핵심 정보만
+        """
+        try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
+            orders_data = get_product_orders(
+                base_url=base_url,
+                token=auth_token,
+                status=status,
+                order_date_from=order_date_from,
+                order_date_to=order_date_to,
+                page_size=min(limit, 20),
+                sort_by="-주문일시"
+            )
+            
+            if not orders_data.get("items"):
+                return {"message": "조회된 주문이 없습니다"}
+            
+            # 핵심 정보만 추출
+            simplified_items = []
+            for item in orders_data["items"][:limit]:
+                simplified_items.append({
+                    "상품명": item.get("상품명"),
+                    "약국명": item.get("약국명"),
+                    "상태": ORDER_STATUS.get(item.get("상태"), "알수없음"),
+                    "금액": item.get("총금액"),
+                    "주문일시": item.get("주문일시", "").split("T")[0] if item.get("주문일시") else ""
+                })
+            
+            return {
+                "주문_아이템": simplified_items,
+                "조회된_개수": len(simplified_items),
+                "전체_주문수": orders_data.get("totalCount", 0),
+                "조회_기간": {
+                    "시작일": order_date_from,
+                    "종료일": order_date_to
+                }
+            }
+        except Exception as e:
+            return {"error": f"주문 아이템 조회 실패: {str(e)}"}
+
+    @mcp.tool("get_today_orders")
+    def get_today_orders_tool(
+        summary_only: bool = True,
+        status: Optional[int] = None,
+        max_items: int = 10,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
+    ) -> Dict[str, Any]:
+        """
+        오늘 주문 내역 조회 (편의 도구)
+        
+        Args:
+            summary_only: True시 통계 요약만 반환 (기본값: True)
+            status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
+            max_items: summary_only=False일 때 최대 아이템 수
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
+            
+        Returns:
+            오늘 주문 정보 (요약 또는 상세)
+        """
+        try:
+            today = datetime.now().strftime("%Y-%m-%d")
+            
+            if summary_only:
+                return get_order_summary_tool(
+                    order_date_from=today,
+                    order_date_to=today,
+                    status=status,
+                    baseUrl=baseUrl,
+                    token=token,
+                    userId=userId,
+                    password=password,
+                    loginUrl=loginUrl,
+                    timeout=timeout
+                )
+            else:
+                return get_orders_tool(
+                    order_date_from=today,
+                    order_date_to=today,
+                    status=status,
+                    max_items=max_items,
+                    baseUrl=baseUrl,
+                    token=token,
+                    userId=userId,
+                    password=password,
+                    loginUrl=loginUrl,
+                    timeout=timeout
+                )
+        except Exception as e:
+            return {"error": f"오늘 주문 조회 실패: {str(e)}"}
