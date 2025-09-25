@@ -7,6 +7,7 @@ import requests
 from mcp.server.fastmcp import FastMCP
 
 from src.pilldoc.api import APIClient
+from .helpers import need_base_url, ensure_token
 
 
 # 상태 코드 매핑
@@ -274,7 +275,13 @@ def register_product_orders_tools(mcp: FastMCP):
         order_date_to: Optional[str] = None,
         page_size: int = 20,
         page: int = 1,
-        sort_by: Optional[str] = None
+        sort_by: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
     ) -> Dict[str, Any]:
         """
         상품 주문 목록 조회
@@ -290,20 +297,23 @@ def register_product_orders_tools(mcp: FastMCP):
             page_size: 페이지 크기 (기본값: 20)
             page: 현재 페이지 (기본값: 1)
             sort_by: 정렬 (예: -CreatedAt, CreatedAt)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
             
         Returns:
             주문 목록 및 페이징 정보
         """
-        base_url = os.getenv("PILLDOC_BASE_URL")
-        token = os.getenv("PILLDOC_TOKEN")
-        
-        if not base_url or not token:
-            return {"error": "PILLDOC_BASE_URL 또는 PILLDOC_TOKEN 환경변수가 설정되지 않았습니다"}
-        
         try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
             return get_product_orders(
                 base_url=base_url,
-                token=token,
+                token=auth_token,
                 status=status,
                 request_type=request_type,
                 payment_type=payment_type,
@@ -323,7 +333,13 @@ def register_product_orders_tools(mcp: FastMCP):
         status: Optional[int] = None,
         days: Optional[int] = None,
         order_date_from: Optional[str] = None,
-        order_date_to: Optional[str] = None
+        order_date_to: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
     ) -> Dict[str, Any]:
         """
         주문 통계 분석
@@ -333,22 +349,25 @@ def register_product_orders_tools(mcp: FastMCP):
             days: 최근 N일간 데이터 (order_date_from/to보다 우선)
             order_date_from: 주문일시From (YYYY-MM-DD 형식)
             order_date_to: 주문일시To (YYYY-MM-DD 형식)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
             
         Returns:
             주문 통계 분석 결과
         """
-        base_url = os.getenv("PILLDOC_BASE_URL")
-        token = os.getenv("PILLDOC_TOKEN")
-        
-        if not base_url or not token:
-            return {"error": "PILLDOC_BASE_URL 또는 PILLDOC_TOKEN 환경변수가 설정되지 않았습니다"}
-        
         try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
             # 날짜 범위 설정
             if days:
                 orders_data = get_recent_orders(
                     base_url=base_url,
-                    token=token,
+                    token=auth_token,
                     days=days,
                     status=status,
                     page_size=100  # 통계를 위해 더 많은 데이터 조회
@@ -356,7 +375,7 @@ def register_product_orders_tools(mcp: FastMCP):
             else:
                 orders_data = get_product_orders(
                     base_url=base_url,
-                    token=token,
+                    token=auth_token,
                     status=status,
                     order_date_from=order_date_from,
                     order_date_to=order_date_to,
@@ -373,7 +392,13 @@ def register_product_orders_tools(mcp: FastMCP):
         search_type: int = 0,
         status: Optional[int] = None,
         page_size: int = 20,
-        page: int = 1
+        page: int = 1,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
     ) -> Dict[str, Any]:
         """
         약국 정보로 주문 검색
@@ -384,20 +409,23 @@ def register_product_orders_tools(mcp: FastMCP):
             status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
             page_size: 페이지 크기 (기본값: 20)
             page: 현재 페이지 (기본값: 1)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
             
         Returns:
             검색된 주문 목록
         """
-        base_url = os.getenv("PILLDOC_BASE_URL")
-        token = os.getenv("PILLDOC_TOKEN")
-        
-        if not base_url or not token:
-            return {"error": "PILLDOC_BASE_URL 또는 PILLDOC_TOKEN 환경변수가 설정되지 않았습니다"}
-        
         try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
             return search_orders_by_pharmacy(
                 base_url=base_url,
-                token=token,
+                token=auth_token,
                 search_keyword=search_keyword,
                 search_type=search_type,
                 status=status,
@@ -412,7 +440,13 @@ def register_product_orders_tools(mcp: FastMCP):
         days: int = 7,
         status: Optional[int] = None,
         page_size: int = 20,
-        page: int = 1
+        page: int = 1,
+        baseUrl: Optional[str] = None,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        loginUrl: Optional[str] = None,
+        timeout: int = 15
     ) -> Dict[str, Any]:
         """
         최근 N일간의 주문 조회
@@ -422,20 +456,23 @@ def register_product_orders_tools(mcp: FastMCP):
             status: 상태 필터 (0=결제진행중, 1=결제완료, 2=주문취소/환불)
             page_size: 페이지 크기 (기본값: 20)
             page: 현재 페이지 (기본값: 1)
+            baseUrl: API 베이스 URL
+            token: 인증 토큰
+            userId: 사용자 ID (토큰이 없을 때)
+            password: 비밀번호 (토큰이 없을 때)
+            loginUrl: 로그인 URL
+            timeout: 타임아웃
             
         Returns:
             최근 주문 목록
         """
-        base_url = os.getenv("PILLDOC_BASE_URL")
-        token = os.getenv("PILLDOC_TOKEN")
-        
-        if not base_url or not token:
-            return {"error": "PILLDOC_BASE_URL 또는 PILLDOC_TOKEN 환경변수가 설정되지 않았습니다"}
-        
         try:
+            base_url = need_base_url(baseUrl)
+            auth_token = ensure_token(token, userId, password, loginUrl, timeout)
+            
             return get_recent_orders(
                 base_url=base_url,
-                token=token,
+                token=auth_token,
                 days=days,
                 status=status,
                 page_size=page_size,
