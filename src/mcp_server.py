@@ -6,6 +6,8 @@ from src.mcp_tools import (
     register_auth_tools,
     register_pilldoc_tools,
 )
+from src.mcp_tools.medical_institution_tools import register_medical_institution_tools
+from src.mcp_tools.product_orders_tools import register_product_orders_tools
 
 
 # Load env once
@@ -48,7 +50,21 @@ def create_server() -> FastMCP:
    - 대용량 통계 데이터는 청크 단위로 처리
    - 실시간 통계는 캐싱 활용
 
-6. 일반 원칙:
+6. 요양기관기호 관련 tools (medical_institution_tools):
+   - 8자리 숫자 형식 검증 필수
+   - 지역코드(1-2자리)와 종별구분(3자리) 유효성 확인
+   - 요양병원 특별 규칙 적용 (3자리:2, 4자리:8)
+   - 대량 코드 분석 시 패턴 분석 도구 활용
+   - 잘못된 코드는 상세한 오류 정보 제공
+
+7. 상품 주문 관리 tools (product_orders_tools):
+   - 날짜 형식은 YYYY-MM-DD 사용 (예: 2025-09-25)
+   - 상태코드 확인: 0=결제진행중, 1=결제완료, 2=취소/환불
+   - 페이징 처리 시 적절한 page_size 설정 (기본 20)
+   - 통계 분석 시 충분한 데이터 수집을 위해 page_size 증가
+   - 검색 시 search_type 활용하여 정확한 검색 수행
+
+8. 일반 원칙:
    - 모든 데이터 조회는 LIMIT 절 포함
    - 절대 경로 사용 권장
    - 중요한 작업은 사용자 확인 후 실행
@@ -58,6 +74,8 @@ def create_server() -> FastMCP:
     
     register_auth_tools(mcp)
     register_pilldoc_tools(mcp)
+    register_medical_institution_tools(mcp)
+    register_product_orders_tools(mcp)
     return mcp
 
 
