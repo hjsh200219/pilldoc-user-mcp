@@ -1,4 +1,4 @@
-"""통계 관련 도구들"""
+"""PillDoc 출력 통계 및 서비스 통계 도구들"""
 from typing import Any, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 import requests as _req
@@ -7,8 +7,8 @@ from src.pilldoc.api import get_accounts
 from .helpers import need_base_url, ensure_token, items_of, handle_http_error
 
 
-def register_stats_tools(mcp: FastMCP) -> None:
-    """통계 관련 도구들 등록"""
+def register_pilldoc_statistics_tools(mcp: FastMCP) -> None:
+    """PillDoc 출력 통계 및 서비스 통계 도구들 등록"""
 
     @mcp.tool()
     def pilldoc_summary(

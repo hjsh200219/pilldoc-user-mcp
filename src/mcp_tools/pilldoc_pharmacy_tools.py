@@ -1,4 +1,4 @@
-"""약국 검색 및 관리 도구들"""
+"""PillDoc 가입 약국 검색 및 관리 도구들"""
 from typing import Any, Dict, Optional
 from mcp.server.fastmcp import FastMCP
 import requests as _req
@@ -10,8 +10,8 @@ from .helpers import (
 )
 
 
-def register_pharmacy_tools(mcp: FastMCP) -> None:
-    """약국 관련 도구들 등록"""
+def register_pilldoc_pharmacy_tools(mcp: FastMCP) -> None:
+    """PillDoc 가입 약국 관련 도구들 등록"""
 
     @mcp.tool()
     def pilldoc_pharm(

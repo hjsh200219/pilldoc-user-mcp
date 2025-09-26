@@ -2,10 +2,14 @@
 requests>=2.31.0
 python-dotenv>=1.0.1
 mcp>=1.14.0
-fastmcp>=2.12.3
 psycopg2-binary>=2.9.0
+
+# 타입 안전성 및 검증
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
 
 # 개발/테스트 (선택사항)
 # pytest>=7.0.0
 # black>=23.0.0
 # flake8>=6.0.0
+# mypy>=1.0.0

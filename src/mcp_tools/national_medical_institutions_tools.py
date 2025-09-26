@@ -1,4 +1,4 @@
-"""데이터베이스 관련 도구들"""
+"""전국 의료기관 데이터 도구들 - PostgreSQL salesdb institutions 테이블"""
 import os
 from typing import Any, Dict, List, Optional
 from mcp.server.fastmcp import FastMCP
@@ -11,8 +11,8 @@ except ImportError:
 import json
 
 
-def register_database_tools(mcp: FastMCP) -> None:
-    """데이터베이스 관련 도구들 등록"""
+def register_national_medical_institutions_tools(mcp: FastMCP) -> None:
+    """전국 의료기관 데이터 도구들 등록 (PostgreSQL salesdb institutions 테이블)"""
 
     # institutions 테이블 컬럼 정보 (스키마 가이드)
     INSTITUTIONS_COLUMNS = {

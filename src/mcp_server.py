@@ -4,12 +4,12 @@ from mcp.server.fastmcp import FastMCP
 
 from src.mcp_tools import (
     register_auth_tools,
-    register_pilldoc_tools,
+    register_pilldoc_service_tools,
 )
 from src.mcp_tools.medical_institution_tools import register_medical_institution_tools
 from src.mcp_tools.product_orders_tools import register_product_orders_tools
-from src.mcp_tools.stats_tools import register_stats_tools
-from src.mcp_tools.database_tools import register_database_tools
+from src.mcp_tools.pilldoc_statistics_tools import register_pilldoc_statistics_tools
+from src.mcp_tools.national_medical_institutions_tools import register_national_medical_institutions_tools
 
 
 # Load env once
@@ -23,8 +23,77 @@ def create_server() -> FastMCP:
     # Tool 사용 가이드라인 System Prompt 등록
     @mcp.prompt("tool_usage_guide")
     def tool_usage_guide() -> str:
-        """Tool 사용 가이드라인"""
+        """Tool 사용 가이드라인 - 올바른 도구 선택을 위한 가이드"""
         return """
+🎯 TOOL 선택 가이드 - 목적에 맞는 도구 사용하기
+
+=== 데이터 소스별 도구 구분 ===
+
+🏥 전국 의료기관 데이터 (national_medical_institutions_tools):
+- 소스: PostgreSQL salesdb의 institutions 테이블
+- 내용: 전국 모든 의료기관 (의원, 병원, 약국, 치과 등)
+- 용도: 전국 의료기관 현황, 지역별 의료기관 분포 분석
+- 도구: get_institutions_distribution_by_region_and_type, get_institutions
+
+💊 PillDoc 서비스 가입자 데이터 (pilldoc_statistics_tools, accounts_tools):
+- 소스: PillDoc(필독) 서비스 - 이디비(EDB) 제공
+- 내용: PillDoc 서비스에 가입한 약국들 (전체 의료기관의 부분집합)
+- 용도: PillDoc 가입 약국 통계, 서비스 이용 현황 분석
+- 도구: get_accounts_stats, get_erp_statistics, get_region_statistics
+
+🔍 PillDoc 가입 약국 관리 (pilldoc_pharmacy_tools):
+- 소스: PillDoc 서비스 API
+- 내용: PillDoc 가입 약국의 상세 정보 및 관리 기능
+- 용도: 개별 약국 검색, 약국 정보 조회, 약국 관리
+- 도구: find_pharm, pilldoc_pharm
+
+=== 데이터 조회 목적별 도구 선택 ===
+
+🏥 전국 의료기관 분포 조회 시:
+❌ 잘못된 선택: pilldoc_statistics_tools, accounts_tools (PillDoc 가입자만)
+✅ 올바른 선택: national_medical_institutions_tools
+   - 예: "전국 의원 분포", "서울시 구별 병원 현황"
+
+💊 PillDoc 가입 약국 분포/통계 조회 시:
+❌ 잘못된 선택: national_medical_institutions_tools (전체 의료기관)
+✅ 올바른 선택: pilldoc_statistics_tools, accounts_tools
+   - 예: "PillDoc 가입자 분포", "서비스 이용 통계"
+
+🔍 개별 검색 시:
+- PillDoc 가입 약국: pilldoc_pharmacy_tools (find_pharm)
+- 전체 의료기관: national_medical_institutions_tools (get_institutions)
+
+=== 구체적인 사용 시나리오 ===
+
+🌏 "서울시 구별 XX 분포는?" 질문 시:
+1. "PillDoc 가입자 분포" → accounts_tools: get_accounts_stats
+2. "전국 의료기관(의원/병원) 분포" → national_medical_institutions_tools: get_institutions_distribution_by_region_and_type  
+3. "PillDoc 출력 통계 분포" → pilldoc_statistics_tools: get_region_statistics
+
+📊 "전국 XX 통계는?" 질문 시:
+1. "PillDoc ERP별 출력 통계" → pilldoc_statistics_tools: get_erp_statistics
+2. "PillDoc 지역별 출력 통계" → pilldoc_statistics_tools: get_region_statistics
+3. "전국 의료기관 유형별 분포" → national_medical_institutions_tools: get_institutions_distribution_by_region_and_type
+
+🔍 검색 질문 시:
+1. "XX 약국 찾아줘" (PillDoc 가입) → pilldoc_pharmacy_tools: find_pharm
+2. "XX 의료기관 정보" (전체) → national_medical_institutions_tools: get_institutions
+
+💡 핵심 구분 포인트:
+- "PillDoc/필독" 언급 시 → pilldoc_statistics_tools, accounts_tools
+- "전국 의료기관" 언급 시 → national_medical_institutions_tools
+- "가입자/서비스" 언급 시 → pilldoc_statistics_tools, accounts_tools
+- "출력/통계" 언급 시 → pilldoc_statistics_tools
+- 개별 검색 시 → pilldoc_pharmacy_tools (가입자), national_medical_institutions_tools (전체)
+
+🚨 애매한 질문 처리 원칙:
+- "약국", "병원", "의원" 등 의료기관 언급 시 데이터 소스 불분명한 경우
+- 반드시 사용자에게 확인 요청:
+  1. "전국 모든 의료기관 데이터" vs "PillDoc 가입자 데이터" 
+  2. 각각의 범위와 차이점 설명
+  3. 사용자 선택 후 해당 도구 사용
+- 추측하지 말고 명확한 확인 후 진행
+
 다음 규칙에 따라 tool을 사용하세요:
 
 1. 인증 관련 tools (auth_tools):
@@ -47,7 +116,7 @@ def create_server() -> FastMCP:
    - 예산 설정 시 한도 확인
    - 캠페인 상태 변경 시 영향도 검토
 
-5. 통계 관련 tools (stats_tools):
+5. PillDoc 통계 관련 tools (pilldoc_statistics_tools):
    - 날짜 범위는 합리적인 기간으로 제한
    - 대용량 통계 데이터는 청크 단위로 처리
    - 실시간 통계는 캐싱 활용
@@ -71,7 +140,7 @@ def create_server() -> FastMCP:
    - 검색 시 search_type 활용하여 정확한 검색 수행
    - 대화 길이 제한 방지: summary_only=true 또는 전용 요약 도구 사용
 
-8. 데이터베이스 관리 tools (database_tools):
+8. 전국 의료기관 데이터 관리 tools (national_medical_institutions_tools):
    - PostgreSQL salesdb의 institutions 테이블 직접 접근
    - 페이징 처리: limit/offset 파라미터 활용 (기본 limit=100)
    - 검색 기능: 기관명, 유형, 지역별 필터링 지원
@@ -96,15 +165,13 @@ def create_server() -> FastMCP:
 """
     
     register_auth_tools(mcp)
-    register_pilldoc_tools(mcp)
+    register_pilldoc_service_tools(mcp)
     register_medical_institution_tools(mcp)
     register_product_orders_tools(mcp)
-    register_stats_tools(mcp)
-    register_database_tools(mcp)
+    register_pilldoc_statistics_tools(mcp)
+    register_national_medical_institutions_tools(mcp)
     return mcp
 
 
 if __name__ == "__main__":
     create_server().run()
-
-

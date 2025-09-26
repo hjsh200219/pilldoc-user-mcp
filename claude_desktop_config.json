@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "pilldoc-user-mcp": {
+      "command": "python",
+      "args": ["-m", "src.main_server"],
+      "cwd": "/Users/hoshin/workspace/pilldoc-user-mcp",
+      "env": {
+        "PYTHONPATH": "/Users/hoshin/workspace/pilldoc-user-mcp",
+        "EDB_BASE_URL": "https://dev-adminapi.edbintra.co.kr",
+        "LOG_LEVEL": "INFO"
+      }
+    }
+  }
+}
