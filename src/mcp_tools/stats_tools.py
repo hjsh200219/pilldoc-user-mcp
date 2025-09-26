@@ -299,3 +299,209 @@ def register_stats_tools(mcp: FastMCP) -> None:
                 "adBlocked": adstats,
             },
         }
+
+    @mcp.tool()
+    def get_erp_statistics(
+        startDate: Optional[str] = None,
+        endDate: Optional[str] = None,
+        summaryOnly: bool = False,
+        maxItems: int = 0,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+    ) -> Dict[str, Any]:
+        """지정된 기간 동안의 ERP 코드별 약국 수와 출력 수를 조회합니다.
+        
+        Args:
+            startDate: 조회 시작일 (YYYY-MM-DD 형식, 미입력시 전체 기간 조회)
+            endDate: 조회 종료일 (YYYY-MM-DD 형식, 미입력시 전체 기간 조회)
+            summaryOnly: True이면 상위 항목들과 전체 합계만 반환 (대화 길이 제한 방지)
+            maxItems: summaryOnly가 False일 때 반환할 최대 항목 수 (0=제한없음, 기본값)
+            
+        Returns:
+            ERP 코드별 통계 정보:
+            - erpCode: ERP 코드 번호
+            - erpCodeName: ERP 코드명  
+            - pharmacyCount: 해당 ERP를 사용하는 약국 수
+            - printCount: 해당 ERP의 총 출력 수
+            
+        ERP 코드 매핑:
+            IT3000 = 0, BIZPHARM = 1, SITEPREVIEW = 2, WITHPHARM = 3, DAYPAHRM = 4,
+            EPHARM = 5, EZHEALTHPHARM = 6, RESERVE3 = 7, RESERVE4 = 8, RESERVE5 = 9,
+            PMPLUS20 = 10, EZPHARM = 20, MEDICARE = 51, UNKNOWN = 99
+        """
+        base_url = need_base_url(baseUrl)
+        tok = ensure_token(token, userId, password, loginUrl, timeout)
+        
+        # API 엔드포인트 구성
+        url = f"{base_url}/v1/statistics/erp"
+        
+        # 쿼리 파라미터 구성
+        params = {}
+        if startDate:
+            params["StartDate"] = startDate
+        if endDate:
+            params["EndDate"] = endDate
+            
+        headers = {
+            "Authorization": f"Bearer {tok}",
+            "Accept": accept,
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = _req.get(url, params=params, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            result = response.json()
+            
+            # 요약 모드 처리
+            if summaryOnly and result.get("success") and result.get("data"):
+                data = result["data"]
+                if isinstance(data, list):
+                    # 출력 수 기준으로 정렬하여 상위 5개만 표시
+                    sorted_data = sorted(data, key=lambda x: x.get("printCount", 0), reverse=True)[:5]
+                    
+                    # 전체 합계 계산
+                    total_pharmacy = sum(item.get("pharmacyCount", 0) for item in data)
+                    total_print = sum(item.get("printCount", 0) for item in data)
+                    
+                    result["data"] = sorted_data
+                    result["summary"] = {
+                        "totalItems": len(data),
+                        "showingTop": len(sorted_data),
+                        "totalPharmacyCount": total_pharmacy,
+                        "totalPrintCount": total_print
+                    }
+            elif not summaryOnly and result.get("success") and result.get("data"):
+                # maxItems 제한 적용 (0이면 제한 없음)
+                data = result["data"]
+                if isinstance(data, list) and maxItems > 0 and len(data) > maxItems:
+                    result["data"] = data[:maxItems]
+                    result["truncated"] = {
+                        "totalItems": len(data),
+                        "showing": maxItems
+                    }
+            
+            return result
+        except _req.HTTPError as e:
+            return handle_http_error(e, "erp_statistics")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "request_failed",
+                "message": str(e),
+                "url": url,
+                "params": params
+            }
+
+    @mcp.tool()
+    def get_region_statistics(
+        startDate: Optional[str] = None,
+        endDate: Optional[str] = None,
+        sidoName: Optional[str] = None,
+        sigunguName: Optional[str] = None,
+        groupBy: str = "sigungu",
+        summaryOnly: bool = False,
+        maxItems: int = 0,
+        token: Optional[str] = None,
+        userId: Optional[str] = None,
+        password: Optional[str] = None,
+        force: bool = False,
+        loginUrl: Optional[str] = None,
+        baseUrl: Optional[str] = None,
+        accept: str = "application/json",
+        timeout: int = 15,
+    ) -> Dict[str, Any]:
+        """지정된 기간 동안의 지역별 약국 수와 출력 수를 조회합니다.
+        
+        Args:
+            startDate: 조회 시작일 (YYYY-MM-DD 형식, 미입력시 전체 기간 조회)
+            endDate: 조회 종료일 (YYYY-MM-DD 형식, 미입력시 전체 기간 조회)
+            sidoName: 시도명 검색 (부분 검색 지원, 예: '서울'로 검색하면 '서울특별시' 결과 반환)
+            sigunguName: 시군구명 검색 (부분 검색 지원, 예: '중랑'으로 검색하면 '중랑구' 결과 반환)
+            groupBy: 조회 결과 그룹화 방식 (sido: 시도별만, sigungu: 시군구별까지, 기본값: sigungu)
+            summaryOnly: True이면 상위 지역들과 전체 합계만 반환 (대화 길이 제한 방지)
+            maxItems: summaryOnly가 False일 때 반환할 최대 항목 수 (0=제한없음, 기본값)
+            
+        Returns:
+            지역별 통계 정보:
+            - sidoName: 시도명 (예: 서울특별시, 경기도)
+            - sigunguName: 시군구명 (예: 강남구, 수원시) - GroupBy=sido일 경우 빈 값
+            - pharmacyCount: 해당 지역의 약국 수
+            - printCount: 해당 지역의 총 출력 수
+            - legalDongCode: 법정동코드 (시도명/시군구명이 빈 값일 경우 원본 코드 확인용)
+        """
+        base_url = need_base_url(baseUrl)
+        tok = ensure_token(token, userId, password, loginUrl, timeout)
+        
+        # API 엔드포인트 구성
+        url = f"{base_url}/v1/statistics/region"
+        
+        # 쿼리 파라미터 구성
+        params = {}
+        if startDate:
+            params["StartDate"] = startDate
+        if endDate:
+            params["EndDate"] = endDate
+        if sidoName:
+            params["SidoName"] = sidoName
+        if sigunguName:
+            params["SigunguName"] = sigunguName
+        if groupBy:
+            params["GroupBy"] = groupBy
+            
+        headers = {
+            "Authorization": f"Bearer {tok}",
+            "Accept": accept,
+            "Content-Type": "application/json"
+        }
+        
+        try:
+            response = _req.get(url, params=params, headers=headers, timeout=timeout)
+            response.raise_for_status()
+            result = response.json()
+            
+            # 요약 모드 처리
+            if summaryOnly and result.get("success") and result.get("data"):
+                data = result["data"]
+                if isinstance(data, list):
+                    # 출력 수 기준으로 정렬하여 상위 10개만 표시 (지역이므로 조금 더 표시)
+                    sorted_data = sorted(data, key=lambda x: x.get("printCount", 0), reverse=True)[:10]
+                    
+                    # 전체 합계 계산
+                    total_pharmacy = sum(item.get("pharmacyCount", 0) for item in data)
+                    total_print = sum(item.get("printCount", 0) for item in data)
+                    
+                    result["data"] = sorted_data
+                    result["summary"] = {
+                        "totalItems": len(data),
+                        "showingTop": len(sorted_data),
+                        "totalPharmacyCount": total_pharmacy,
+                        "totalPrintCount": total_print
+                    }
+            elif not summaryOnly and result.get("success") and result.get("data"):
+                # maxItems 제한 적용 (0이면 제한 없음)
+                data = result["data"]
+                if isinstance(data, list) and maxItems > 0 and len(data) > maxItems:
+                    result["data"] = data[:maxItems]
+                    result["truncated"] = {
+                        "totalItems": len(data),
+                        "showing": maxItems
+                    }
+            
+            return result
+        except _req.HTTPError as e:
+            return handle_http_error(e, "region_statistics")
+        except Exception as e:
+            return {
+                "success": False,
+                "error": "request_failed",
+                "message": str(e),
+                "url": url,
+                "params": params
+            }

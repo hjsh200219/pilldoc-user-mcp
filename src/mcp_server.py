@@ -8,6 +8,8 @@ from src.mcp_tools import (
 )
 from src.mcp_tools.medical_institution_tools import register_medical_institution_tools
 from src.mcp_tools.product_orders_tools import register_product_orders_tools
+from src.mcp_tools.stats_tools import register_stats_tools
+from src.mcp_tools.database_tools import register_database_tools
 
 
 # Load env once
@@ -49,6 +51,10 @@ def create_server() -> FastMCP:
    - 날짜 범위는 합리적인 기간으로 제한
    - 대용량 통계 데이터는 청크 단위로 처리
    - 실시간 통계는 캐싱 활용
+   - ERP 통계: get_erp_statistics로 ERP 코드별 약국 수와 출력 수 조회
+   - 지역별 통계: get_region_statistics로 시도/시군구별 약국 수와 출력 수 조회
+   - 날짜 형식은 YYYY-MM-DD 사용 (예: 2025-09-25)
+   - 지역 검색은 부분 검색 지원 (예: '서울' → '서울특별시')
 
 6. 요양기관기호 관련 tools (medical_institution_tools):
    - 8자리 숫자 형식 검증 필수
@@ -65,14 +71,23 @@ def create_server() -> FastMCP:
    - 검색 시 search_type 활용하여 정확한 검색 수행
    - 대화 길이 제한 방지: summary_only=true 또는 전용 요약 도구 사용
 
-8. 대화 길이 제한 방지 원칙:
+8. 데이터베이스 관리 tools (database_tools):
+   - PostgreSQL salesdb의 institutions 테이블 직접 접근
+   - 페이징 처리: limit/offset 파라미터 활용 (기본 limit=100)
+   - 검색 기능: 기관명, 유형, 지역별 필터링 지원
+   - 스키마 조회: get_institutions_schema로 테이블 구조 확인
+   - 통계 정보: get_institutions_stats로 분포 현황 파악
+   - 커스텀 쿼리: execute_institutions_query (SELECT만 허용)
+   - 보안: 읽기 전용 접근, 쿼리 결과 제한, 파라미터 바인딩 사용
+
+9. 대화 길이 제한 방지 원칙:
    - 대량 데이터 조회 시 반드시 summary_only=true 옵션 활용
    - max_items 파라미터로 결과 개수 제한 (기본 50개)
    - 요약 전용 도구 우선 사용 (예: get_order_summary)
    - 상세 조회가 필요한 경우에만 전체 데이터 반환
    - 페이징을 활용하여 단계별 데이터 조회
 
-9. 일반 원칙:
+10. 일반 원칙:
    - 모든 데이터 조회는 LIMIT 절 포함
    - 절대 경로 사용 권장
    - 중요한 작업은 사용자 확인 후 실행
@@ -84,6 +99,8 @@ def create_server() -> FastMCP:
     register_pilldoc_tools(mcp)
     register_medical_institution_tools(mcp)
     register_product_orders_tools(mcp)
+    register_stats_tools(mcp)
+    register_database_tools(mcp)
     return mcp
 
 

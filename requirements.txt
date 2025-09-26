@@ -1,6 +1,11 @@
+# 핵심 패키지
 requests>=2.31.0
 python-dotenv>=1.0.1
-mcp>=0.4.2
+mcp>=1.14.0
+fastmcp>=2.12.3
+psycopg2-binary>=2.9.0
 
-
-
+# 개발/테스트 (선택사항)
+# pytest>=7.0.0
+# black>=23.0.0
+# flake8>=6.0.0
