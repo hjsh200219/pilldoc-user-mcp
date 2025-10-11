@@ -12,6 +12,39 @@ from .helpers import (
 from .filter_builder import FilterBuilder
 
 
+def _select_fields(data: Dict[str, Any], fields: Optional[list] = None, compact_fields: Optional[list] = None) -> Dict[str, Any]:
+    """데이터에서 지정된 필드만 선택하여 반환하는 헬퍼 함수
+    
+    Args:
+        data: 원본 데이터 딕셔너리
+        fields: 선택할 필드 리스트 (우선순위 높음)
+        compact_fields: compact 모드용 기본 필드 리스트
+    
+    Returns:
+        선택된 필드만 포함한 딕셔너리
+    """
+    if not isinstance(data, dict):
+        return data
+    
+    # fields가 지정되면 해당 필드만 선택
+    if fields:
+        selected_data = {}
+        for field in fields:
+            if field in data:
+                selected_data[field] = data[field]
+        return selected_data
+    
+    # compact_fields가 지정되면 해당 필드만 선택
+    if compact_fields:
+        selected_data = {}
+        for field in compact_fields:
+            if field in data:
+                selected_data[field] = data[field]
+        return selected_data
+    
+    return data
+
+
 def _sanitize_update_body(body: Dict[str, Any]) -> Dict[str, Any]:
     """계정 업데이트 body 필드를 정제하고 검증하는 공통 함수
 
@@ -221,6 +254,13 @@ def register_accounts_tools(mcp: FastMCP) -> None:
         baseUrl: Optional[str] = None,
         accept: str = "application/json",
         timeout: int = 15,
+        # 출력 형식 제어 (통합)
+        format: str = "full",  # full, compact, minimal, id_only, count_only
+        fields: Optional[list] = None,
+        includeAdBlockedBool: bool = False,
+        excludeMetadata: bool = False,
+        limitItems: Optional[int] = None,
+        maxResults: Optional[int] = None,
         # 다양한 파라미터 이름 지원
         pageSize: Optional[int] = None,
         page_size: Optional[int] = None,
@@ -254,9 +294,16 @@ def register_accounts_tools(mcp: FastMCP) -> None:
         enforceSortLocal: bool = False,
         **kwargs  # 추가 파라미터를 위한 kwargs
     ) -> Dict[str, Any]:
-        """계정 목록 조회
+        """계정 목록 조회 (통합 도구)
 
-        다양한 파라미터 이름을 지원합니다:
+        출력 형식 (format):
+        - full: 전체 데이터 반환 (기본값)
+        - compact: 필수 필드만 반환 (토큰 절약)
+        - minimal: 극도로 간결 (id, name만)
+        - id_only: ID 배열만 반환
+        - count_only: 개수만 반환
+
+        다양한 파라미터 이름 지원:
         - 페이지: page, page_no, pageNo 등
         - 크기: pageSize, page_size, size, limit 등
         - 정렬: sortBy, sort, order 등
@@ -323,109 +370,93 @@ def register_accounts_tools(mcp: FastMCP) -> None:
 
         try:
             resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
-            # 서버 정렬 미적용 대비: 클라이언트 보정 정렬(옵션)
-            if enforceSortLocal and sortBy is not None and isinstance(resp, dict):
-                items = items_of(resp)
-                if items:
-                    sorted_items = client_sort_items(list(items), sortBy)
-                    if isinstance(resp.get("items"), list):
-                        resp["items"] = sorted_items
-                    elif isinstance(resp.get("data"), list):
-                        resp["data"] = sorted_items
-            return resp
         except _req.HTTPError as e:
             return handle_http_error(e)
 
-    @mcp.tool()
-    def pilldoc_accounts_compact(
-        token: Optional[str] = None,
-        userId: Optional[str] = None,
-        password: Optional[str] = None,
-        force: bool = False,
-        loginUrl: Optional[str] = None,
-        baseUrl: Optional[str] = None,
-        accept: str = "application/json",
-        timeout: int = 15,
-        pageSize: Optional[int] = None,
-        page: Optional[int] = None,
-        sortBy: Optional[str] = None,
-        erpKind: Optional[list] = None,
-        isAdDisplay: Optional[int] = None,
-        salesChannel: Optional[list] = None,
-        pharmChain: Optional[list] = None,
-        currentSearchType: Optional[list] = None,
-        searchKeyword: Optional[str] = None,
-        accountType: Optional[str] = None,
-        fields: Optional[list] = None,
-        includeAdBlockedBool: bool = False,
-        includeItems: bool = False,
-        limitItems: Optional[int] = None,
-        enforceSortLocal: bool = True,
-    ) -> Dict[str, Any]:
-        """계정 목록을 간결한 형태로 반환합니다. 선택한 필드만 노출하고 isAdDisplay 숫자를 포함할 수 있습니다.
-
-        기본 필드: ["id", "bizno"] (bizno는 원본의 bizNO/bizNo/사업자등록번호에서 정규화)
-        """
-        base_url = need_base_url(baseUrl)
-        tok = ensure_token(token, userId, password, loginUrl, timeout)
-
-        filters = FilterBuilder.build_account_filters(
-            pageSize=pageSize,
-            page=page,
-            sortBy=sortBy,
-            erpKind=erpKind,
-            isAdDisplay=isAdDisplay,
-            salesChannel=salesChannel,
-            pharmChain=pharmChain,
-            currentSearchType=currentSearchType,
-            searchKeyword=searchKeyword,
-            accountType=accountType
-        )
-
-        default_fields = ["id", "bizno"]
-        wanted = list(fields) if isinstance(fields, list) and fields else default_fields
-
-        def _select_item(it: Dict[str, Any]) -> Dict[str, Any]:
-            slim: Dict[str, Any] = {}
-            for k in wanted:
-                if k == "bizno":
-                    raw = it.get("bizNO") or it.get("bizNo") or it.get("사업자등록번호") or it.get("bizno")
-                    try:
-                        raw = str(raw).strip() if raw is not None else None
-                    except Exception:
-                        raw = None
-                    slim["bizno"] = normalize_bizno(raw)
-                else:
-                    slim[k] = it.get(k)
-            if includeAdBlockedBool:
-                isd = is_ad_display_from_item(it)
-                slim["isAdDisplay"] = isd
-            return slim
-
-        try:
-            resp = get_accounts(base_url, tok, accept, timeout, filters=filters)
-        except _req.HTTPError as e:
-            return handle_http_error(e)
+        # format에 따른 응답 처리
+        if format == "count_only":
+            total_count = 0
+            if isinstance(resp, dict):
+                total_count = resp.get("totalCount", 0)
+            elif isinstance(resp, list):
+                total_count = len(resp)
+            return {"count": total_count}
 
         items = items_of(resp)
+
+        # 서버 정렬 미적용 대비: 클라이언트 보정 정렬
         if enforceSortLocal and sortBy is not None and items:
             items = client_sort_items(list(items), sortBy)
-        slim_items = [_select_item(it) for it in items if isinstance(it, dict)]
-        if limitItems is not None:
-            try:
-                slim_items = slim_items[: int(limitItems)]
-            except Exception:
-                pass
 
-        meta: Dict[str, Any] = {}
-        if isinstance(resp, dict):
-            for key in ("totalCount", "totalPage", "nowPage"):
-                if key in resp:
-                    meta[key] = resp[key]
+        # format별 처리
+        if format == "id_only":
+            ids = []
+            for item in items:
+                if isinstance(item, dict) and "id" in item:
+                    ids.append(item["id"])
+            if maxResults and len(ids) > maxResults:
+                ids = ids[:maxResults]
+            return {"ids": ids}
 
-        if includeItems:
+        elif format == "minimal":
+            minimal_items = []
+            for item in items:
+                if isinstance(item, dict):
+                    minimal_item = {
+                        "id": item.get("id"),
+                        "name": item.get("약국명", "")
+                    }
+                    minimal_items.append(minimal_item)
+            if maxResults and len(minimal_items) > maxResults:
+                minimal_items = minimal_items[:maxResults]
+            return {"items": minimal_items}
+
+        elif format == "compact":
+            default_fields = ["id", "bizno", "약국명", "displayName"]
+            wanted = list(fields) if isinstance(fields, list) and fields else default_fields
+
+            def _select_item(it: Dict[str, Any]) -> Dict[str, Any]:
+                slim: Dict[str, Any] = {}
+                for k in wanted:
+                    if k == "bizno":
+                        raw = it.get("bizNO") or it.get("bizNo") or it.get("사업자등록번호") or it.get("bizno")
+                        try:
+                            raw = str(raw).strip() if raw is not None else None
+                        except Exception:
+                            raw = None
+                        slim["bizno"] = normalize_bizno(raw)
+                    else:
+                        slim[k] = it.get(k)
+                if includeAdBlockedBool:
+                    isd = is_ad_display_from_item(it)
+                    slim["isAdDisplay"] = isd
+                return slim
+
+            slim_items = [_select_item(it) for it in items if isinstance(it, dict)]
+            if limitItems is not None:
+                slim_items = slim_items[:int(limitItems)]
+            if maxResults is not None:
+                slim_items = slim_items[:int(maxResults)]
+
+            if excludeMetadata:
+                return {"items": slim_items}
+
+            meta: Dict[str, Any] = {}
+            if isinstance(resp, dict):
+                for key in ("totalCount", "totalPage", "nowPage"):
+                    if key in resp:
+                        meta[key] = resp[key]
             meta["items"] = slim_items
-        return meta
+            return meta
+
+        else:  # format == "full"
+            if isinstance(resp, dict):
+                if isinstance(resp.get("items"), list):
+                    resp["items"] = items
+                elif isinstance(resp.get("data"), list):
+                    resp["data"] = items
+            return resp
+
 
     @mcp.tool()
     def pilldoc_user(
@@ -438,12 +469,26 @@ def register_accounts_tools(mcp: FastMCP) -> None:
         baseUrl: Optional[str] = None,
         accept: str = "application/json",
         timeout: int = 15,
+        fields: Optional[list] = None,
+        compact: bool = False,
     ) -> Dict[str, Any]:
-        """사용자 정보 조회"""
+        """사용자 정보 조회
+        
+        토큰 최적화 옵션:
+        - fields: 반환할 필드 리스트 (예: ["id", "displayName", "약국명"])
+        - compact: True시 핵심 필드만 반환 (id, displayName, 약국명, email)
+        """
         base_url = need_base_url(baseUrl)
         tok = ensure_token(token, userId, password, loginUrl, timeout)
         try:
-            return get_user(base_url, tok, id, accept, timeout)
+            user_data = get_user(base_url, tok, id, accept, timeout)
+            
+            # compact 모드 또는 필드 선택 적용
+            if compact or fields:
+                compact_fields = ["id", "displayName", "약국명", "email", "userType", "accountType"] if compact else None
+                return _select_fields(user_data, fields, compact_fields)
+            
+            return user_data
         except _req.HTTPError as e:
             return handle_http_error(e)
 

@@ -8,7 +8,6 @@ from src.mcp_tools import (
 )
 from src.mcp_tools.medical_institution_tools import register_medical_institution_tools
 from src.mcp_tools.product_orders_tools import register_product_orders_tools
-from src.mcp_tools.pilldoc_statistics_tools import register_pilldoc_statistics_tools
 from src.mcp_tools.national_medical_institutions_tools import register_national_medical_institutions_tools
 
 
@@ -168,7 +167,6 @@ def create_server() -> FastMCP:
     register_pilldoc_service_tools(mcp)
     register_medical_institution_tools(mcp)
     register_product_orders_tools(mcp)
-    register_pilldoc_statistics_tools(mcp)
     register_national_medical_institutions_tools(mcp)
     return mcp
 
