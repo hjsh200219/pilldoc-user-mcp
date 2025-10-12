@@ -1,14 +1,7 @@
 import os
+from typing import Callable, Dict
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
-
-from src.mcp_tools import (
-    register_auth_tools,
-    register_pilldoc_service_tools,
-)
-from src.mcp_tools.medical_institution_tools import register_medical_institution_tools
-from src.mcp_tools.product_orders_tools import register_product_orders_tools
-from src.mcp_tools.national_medical_institutions_tools import register_national_medical_institutions_tools
 
 
 # Load env once
@@ -16,9 +9,29 @@ load_dotenv(".env", override=False)
 load_dotenv(".env.local", override=False)
 
 
-def create_server() -> FastMCP:
+# Tool Discovery 기반 lazy registration
+_TOOL_MODULES: Dict[str, Callable[[FastMCP], None]] = {
+    "auth": lambda mcp: __import__("src.mcp_tools.auth_tools", fromlist=["register_auth_tools"]).register_auth_tools(mcp),
+    "pilldoc_service": lambda mcp: __import__("src.mcp_tools", fromlist=["register_pilldoc_service_tools"]).register_pilldoc_service_tools(mcp),
+    "medical_institution": lambda mcp: __import__("src.mcp_tools.medical_institution_tools", fromlist=["register_medical_institution_tools"]).register_medical_institution_tools(mcp),
+    "product_orders": lambda mcp: __import__("src.mcp_tools.product_orders_tools", fromlist=["register_product_orders_tools"]).register_product_orders_tools(mcp),
+    "national_medical_institutions": lambda mcp: __import__("src.mcp_tools.national_medical_institutions_tools", fromlist=["register_national_medical_institutions_tools"]).register_national_medical_institutions_tools(mcp),
+}
+
+
+def create_server(enable_lazy_loading: bool | None = None) -> FastMCP:
+    # 환경 변수로부터 lazy loading 설정 읽기 (기본값: True)
+    if enable_lazy_loading is None:
+        env_value = os.getenv("MCP_LAZY_LOADING", "true").lower()
+        enable_lazy_loading = env_value in ("true", "1", "yes", "on")
+
     mcp = FastMCP("pilldoc-user-mcp")
-    
+
+    # Lazy loading 비활성화 시 모든 도구 즉시 로드
+    if not enable_lazy_loading:
+        for loader in _TOOL_MODULES.values():
+            loader(mcp)
+
     # Tool 사용 가이드라인 System Prompt 등록
     @mcp.prompt("tool_usage_guide")
     def tool_usage_guide() -> str:
@@ -162,12 +175,26 @@ def create_server() -> FastMCP:
    - 에러 발생 시 명확한 에러 메시지 제공
    - API 호출 시 적절한 타임아웃 설정
 """
-    
-    register_auth_tools(mcp)
-    register_pilldoc_service_tools(mcp)
-    register_medical_institution_tools(mcp)
-    register_product_orders_tools(mcp)
-    register_national_medical_institutions_tools(mcp)
+
+    # Lazy loading 활성화 시 MCP Tool Discovery 프로토콜 활용
+    # 클라이언트가 tool 목록을 요청할 때 필요한 모듈만 동적 로드
+    if enable_lazy_loading:
+        original_list_tools = mcp.list_tools
+
+        def lazy_list_tools():
+            # 아직 로드되지 않은 모듈 동적 로드
+            for module_name, loader in _TOOL_MODULES.items():
+                try:
+                    loader(mcp)
+                except Exception as e:
+                    # 모듈 로드 실패 시 경고만 출력하고 계속 진행
+                    import sys
+                    print(f"Warning: Failed to load tool module '{module_name}': {e}", file=sys.stderr)
+
+            return original_list_tools()
+
+        mcp.list_tools = lazy_list_tools
+
     return mcp
 
 
