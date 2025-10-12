@@ -1,5 +1,7 @@
 import os
-from typing import Callable, Dict
+import sys
+from typing import Callable, Dict, Set
+from functools import wraps
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
@@ -9,8 +11,53 @@ load_dotenv(".env", override=False)
 load_dotenv(".env.local", override=False)
 
 
-# Tool Discovery 기반 lazy registration
-_TOOL_MODULES: Dict[str, Callable[[FastMCP], None]] = {
+# On-demand 스키마 로딩을 위한 도구-모듈 매핑
+_TOOL_TO_MODULE: Dict[str, str] = {
+    # auth_tools
+    "login": "auth",
+
+    # accounts_tools
+    "get_accounts": "pilldoc_service",
+    "update_account": "pilldoc_service",
+    "update_account_by_search": "pilldoc_service",
+    "get_accounts_stats": "pilldoc_service",
+    "get_user_from_accounts": "pilldoc_service",
+
+    # pilldoc_pharmacy_tools
+    "get_user": "pilldoc_service",
+    "get_pharm": "pilldoc_service",
+    "find_pharm": "pilldoc_service",
+    "find_pharm_by_name": "pilldoc_service",
+
+    # campaign_tools
+    "get_adps_rejects": "pilldoc_service",
+    "update_adps_reject": "pilldoc_service",
+
+    # pilldoc_statistics_tools
+    "get_erp_statistics": "pilldoc_service",
+    "get_region_statistics": "pilldoc_service",
+
+    # medical_institution_tools
+    "parse_medical_institution_code": "medical_institution",
+    "validate_medical_institution_code": "medical_institution",
+    "analyze_medical_institution_codes": "medical_institution",
+
+    # product_orders_tools
+    "get_product_orders": "product_orders",
+    "get_order_summary": "product_orders",
+    "get_orders_by_date_range": "product_orders",
+    "get_orders_by_pharmacy": "product_orders",
+
+    # national_medical_institutions_tools
+    "get_institutions": "national_medical_institutions",
+    "get_institutions_distribution_by_region_and_type": "national_medical_institutions",
+    "get_institutions_schema": "national_medical_institutions",
+    "get_institutions_stats": "national_medical_institutions",
+    "execute_institutions_query": "national_medical_institutions",
+}
+
+# 모듈 로더 함수 매핑
+_MODULE_LOADERS: Dict[str, Callable[[FastMCP], None]] = {
     "auth": lambda mcp: __import__("src.mcp_tools.auth_tools", fromlist=["register_auth_tools"]).register_auth_tools(mcp),
     "pilldoc_service": lambda mcp: __import__("src.mcp_tools", fromlist=["register_pilldoc_service_tools"]).register_pilldoc_service_tools(mcp),
     "medical_institution": lambda mcp: __import__("src.mcp_tools.medical_institution_tools", fromlist=["register_medical_institution_tools"]).register_medical_institution_tools(mcp),
@@ -18,19 +65,60 @@ _TOOL_MODULES: Dict[str, Callable[[FastMCP], None]] = {
     "national_medical_institutions": lambda mcp: __import__("src.mcp_tools.national_medical_institutions_tools", fromlist=["register_national_medical_institutions_tools"]).register_national_medical_institutions_tools(mcp),
 }
 
+# 로드된 모듈 추적
+_loaded_modules: Set[str] = set()
 
-def create_server(enable_lazy_loading: bool | None = None) -> FastMCP:
-    # 환경 변수로부터 lazy loading 설정 읽기 (기본값: True)
-    if enable_lazy_loading is None:
-        env_value = os.getenv("MCP_LAZY_LOADING", "true").lower()
-        enable_lazy_loading = env_value in ("true", "1", "yes", "on")
+
+def _load_module_for_tool(mcp: FastMCP, tool_name: str) -> bool:
+    """도구 이름에 해당하는 모듈을 on-demand로 로드합니다."""
+    module_name = _TOOL_TO_MODULE.get(tool_name)
+
+    if not module_name:
+        return False
+
+    if module_name in _loaded_modules:
+        return True
+
+    try:
+        loader = _MODULE_LOADERS.get(module_name)
+        if loader:
+            loader(mcp)
+            _loaded_modules.add(module_name)
+            print(f"[On-Demand] Loaded module '{module_name}' for tool '{tool_name}'", file=sys.stderr)
+            return True
+    except Exception as e:
+        print(f"[On-Demand] Failed to load module '{module_name}': {e}", file=sys.stderr)
+        return False
+
+    return False
+
+
+def create_server(enable_on_demand: bool | None = None) -> FastMCP:
+    """
+    MCP 서버를 생성합니다.
+
+    Args:
+        enable_on_demand: On-demand 로딩 활성화 여부
+            - None (기본값): 환경 변수 MCP_ON_DEMAND로 제어
+            - True: On-demand 로딩 활성화 (도구 호출 시에만 모듈 로드)
+            - False: 서버 시작 시 모든 도구 즉시 로드
+    """
+    # 환경 변수로부터 on-demand 설정 읽기 (기본값: True)
+    if enable_on_demand is None:
+        env_value = os.getenv("MCP_ON_DEMAND", "true").lower()
+        enable_on_demand = env_value in ("true", "1", "yes", "on")
 
     mcp = FastMCP("pilldoc-user-mcp")
 
-    # Lazy loading 비활성화 시 모든 도구 즉시 로드
-    if not enable_lazy_loading:
-        for loader in _TOOL_MODULES.values():
-            loader(mcp)
+    # On-demand 비활성화 시 모든 도구 즉시 로드
+    if not enable_on_demand:
+        print("[On-Demand] Disabled - Loading all modules immediately", file=sys.stderr)
+        for module_name, loader in _MODULE_LOADERS.items():
+            try:
+                loader(mcp)
+                _loaded_modules.add(module_name)
+            except Exception as e:
+                print(f"[On-Demand] Failed to load module '{module_name}': {e}", file=sys.stderr)
 
     # Tool 사용 가이드라인 System Prompt 등록
     @mcp.prompt("tool_usage_guide")
@@ -79,7 +167,7 @@ def create_server(enable_lazy_loading: bool | None = None) -> FastMCP:
 
 🌏 "서울시 구별 XX 분포는?" 질문 시:
 1. "PillDoc 가입자 분포" → accounts_tools: get_accounts_stats
-2. "전국 의료기관(의원/병원) 분포" → national_medical_institutions_tools: get_institutions_distribution_by_region_and_type  
+2. "전국 의료기관(의원/병원) 분포" → national_medical_institutions_tools: get_institutions_distribution_by_region_and_type
 3. "PillDoc 출력 통계 분포" → pilldoc_statistics_tools: get_region_statistics
 
 📊 "전국 XX 통계는?" 질문 시:
@@ -101,7 +189,7 @@ def create_server(enable_lazy_loading: bool | None = None) -> FastMCP:
 🚨 애매한 질문 처리 원칙:
 - "약국", "병원", "의원" 등 의료기관 언급 시 데이터 소스 불분명한 경우
 - 반드시 사용자에게 확인 요청:
-  1. "전국 모든 의료기관 데이터" vs "PillDoc 가입자 데이터" 
+  1. "전국 모든 의료기관 데이터" vs "PillDoc 가입자 데이터"
   2. 각각의 범위와 차이점 설명
   3. 사용자 선택 후 해당 도구 사용
 - 추측하지 말고 명확한 확인 후 진행
@@ -176,20 +264,29 @@ def create_server(enable_lazy_loading: bool | None = None) -> FastMCP:
    - API 호출 시 적절한 타임아웃 설정
 """
 
-    # Lazy loading 활성화 시 MCP Tool Discovery 프로토콜 활용
-    # 클라이언트가 tool 목록을 요청할 때 필요한 모듈만 동적 로드
-    if enable_lazy_loading:
+    # On-demand 활성화 시 도구 호출 인터셉터 설정
+    if enable_on_demand:
+        print("[On-Demand] Enabled - Modules will be loaded on first use", file=sys.stderr)
+
+        # MCP 도구 호출 시 자동으로 필요한 모듈 로드
+        original_call_tool = mcp.call_tool
+
+        @wraps(original_call_tool)
+        def on_demand_call_tool(name: str, arguments: dict):
+            # 도구 호출 전 필요한 모듈 로드
+            _load_module_for_tool(mcp, name)
+            return original_call_tool(name, arguments)
+
+        mcp.call_tool = on_demand_call_tool
+
+        # list_tools 호출 시 최소한의 메타데이터만 반환
         original_list_tools = mcp.list_tools
 
         def lazy_list_tools():
-            # 아직 로드되지 않은 모듈 동적 로드
-            for module_name, loader in _TOOL_MODULES.items():
-                try:
-                    loader(mcp)
-                except Exception as e:
-                    # 모듈 로드 실패 시 경고만 출력하고 계속 진행
-                    import sys
-                    print(f"Warning: Failed to load tool module '{module_name}': {e}", file=sys.stderr)
+            # 아직 로드되지 않은 모듈의 도구 목록을 위해
+            # 최소한의 auth 모듈만 사전 로드 (로그인 필수)
+            if "auth" not in _loaded_modules:
+                _load_module_for_tool(mcp, "login")
 
             return original_list_tools()
 
